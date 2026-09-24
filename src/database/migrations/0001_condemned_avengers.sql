@@ -1,0 +1,1 @@
+CREATE INDEX "processing_runs_status_started_at_idx" ON "processing_runs" USING btree ("status","started_at");

@@ -226,3 +226,211 @@ Concreta el mecanismo de autenticación entre n8n y Job Hunter para el MVP.
 | M1.7 | Una `API_KEY` mediante Bearer Token |
 
 Estas decisiones quedan cerradas para la implementación de M1. Cualquier modificación posterior deberá documentarse como una nueva decisión o como una modificación explícita de una decisión existente.
+
+## M1.8 — Creación inicial de `JobDetection`
+
+### Decisión
+
+`RawJobInput`, `ProcessingRun` y `JobDetection` se crearán de forma atómica durante la aceptación inicial de la petición.
+
+El flujo será:
+
+```text
+POST /api/jobs
+    ↓
+Validación
+    ↓
+RawJobInput
+ProcessingRun = PENDING
+JobDetection
+    ↓
+202 Accepted + detection_id
+    ↓
+Procesador interno
+    ↓
+PROCESSING
+    ↓
+COMPLETED / FAILED
+```
+
+La creación de las tres entidades será atómica: si alguna falla, la petición no se considera aceptada.
+
+### Motivo
+
+El contrato de M0.11 requiere devolver `detection_id` junto con la respuesta `202 Accepted`. Por tanto, `JobDetection` debe existir antes de responder.
+
+### Relación con M0.11
+
+Concreta el orden de persistencia necesario para cumplir el contrato HTTP.
+
+---
+
+## M1.9 — Reserva segura de `ProcessingRun`
+
+### Decisión
+
+La reserva de ejecuciones pendientes se realizará utilizando PostgreSQL mediante:
+
+```sql
+SELECT ... FOR UPDATE SKIP LOCKED
+```
+
+La fila se bloqueará dentro de una transacción, se marcará como `PROCESSING` y posteriormente se procesará fuera de esa transacción.
+
+### Motivo
+
+Permite evitar que dos procesos procesen simultáneamente el mismo `ProcessingRun` sin introducir Redis, RabbitMQ u otra infraestructura.
+
+### Relación con M0.11
+
+Concreta el mecanismo de concurrencia del procesador interno definido para M1.
+
+---
+
+## M1.10 — Recuperación de ejecuciones `PROCESSING`
+
+### Decisión
+
+Se utilizará la variable:
+
+```text
+PROCESSING_RECOVERY_TIMEOUT_MS
+```
+
+Una ejecución se considerará abandonada cuando:
+
+```text
+status = PROCESSING
+AND
+started_at < ahora - timeout
+```
+
+La ejecución volverá a `PENDING` para poder ser procesada de nuevo.
+
+No se añadirá `heartbeat_at` en M1.
+
+### Motivo
+
+Permite recuperar ejecuciones que quedaron en `PROCESSING` después de una caída del servicio sin añadir un mecanismo adicional de seguimiento.
+
+### Relación con M0.11
+
+Concreta la recuperación de ejecuciones interrumpidas.
+
+---
+
+## M1.11 — Reintentos
+
+### Decisión
+
+Cada procesamiento tendrá un máximo de tres intentos:
+
+- un intento inicial;
+- dos reintentos adicionales.
+
+Los reintentos serán inmediatos.
+
+No se utilizará:
+
+- exponential backoff;
+- `next_retry_at`;
+- scheduler adicional;
+- cola de retraso.
+
+`PROCESSING_RECOVERY_TIMEOUT_MS` se utiliza únicamente para recuperar ejecuciones abandonadas.
+
+### Motivo
+
+El procesamiento básico de M1 no necesita una estrategia de reintentos más compleja.
+
+### Relación con M0.11
+
+Concreta la estrategia de recuperación definida en M1.4.
+
+---
+
+## M1.12 — Versión de Node.js
+
+### Decisión
+
+M1 utilizará:
+
+```text
+Node.js 24.13.0
+```
+
+La misma versión se utilizará durante el desarrollo y en la imagen Docker de producción.
+
+No se introduce ningún gestor adicional de versiones de Node.js.
+
+### Motivo
+
+Mantener una única versión entre desarrollo y ejecución evita diferencias innecesarias de entorno.
+
+### Relación con M0.11
+
+Concreta la versión del runtime utilizada durante M1.
+
+---
+
+## M1.13 — Contrato HTTP y validación Zod
+
+### Decisión
+
+La validación de `POST /api/jobs` será sencilla y explícita:
+
+- `source`, `title` y `company`: strings no vacíos.
+- `url`: URL válida.
+- `detected_at`: fecha/hora ISO 8601 válida.
+- No se realizará normalización de contenido en M1.
+- Las propiedades desconocidas serán rechazadas.
+- Los errores HTTP utilizarán un formato JSON sencillo y consistente.
+
+Ejemplo:
+
+```json
+{
+  "error": "VALIDATION_ERROR",
+  "message": "La entrada no es válida"
+}
+```
+
+No se introduce un sistema de errores complejo.
+
+### Motivo
+
+Cubrir las necesidades del contrato de M1 sin introducir reglas de negocio o abstracciones innecesarias.
+
+### Relación con M0.11
+
+Concreta las reglas de validación del contrato de entrada.
+
+---
+
+## M1.14 — Docker Compose de desarrollo
+
+### Decisión
+
+El `docker-compose.yml` de M1 gestionará únicamente PostgreSQL 18.6 para el entorno local.
+
+La arquitectura de desarrollo será:
+
+```text
+Windows
+└── Node.js 24.13.0
+        │
+        └── PostgreSQL 18.6
+                └── Docker Compose
+```
+
+Node.js se ejecutará directamente en Windows.
+
+n8n no formará parte del Compose de desarrollo de M1.
+
+### Motivo
+
+M1 solo necesita PostgreSQL como infraestructura externa. Añadir Node o n8n al Compose introduciría configuración que todavía no es necesaria.
+
+### Relación con M0.11
+
+Concreta la estrategia de desarrollo local para M1. La integración con n8n se abordará en el hito correspondiente.
