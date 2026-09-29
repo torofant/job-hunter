@@ -1,11 +1,23 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { RawJobInput } from "../../api/schemas/raw-job-input.schema.js";
 import type { Database } from "../../database/client.js";
-import { jobDetections, processingRuns, rawJobInputs } from "../../database/schema/index.js";
+import {
+  aiUsage,
+  jobDetections,
+  jobOffers,
+  processingRuns,
+  rawJobInputs
+} from "../../database/schema/index.js";
+import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import type { JobFilterResult } from "./job.filter.js";
+
+type JobOfferInsert = InferInsertModel<typeof jobOffers>;
+type JobOffer = InferSelectModel<typeof jobOffers>;
 
 export class JobRepository {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: Database) { }
 
   async createAcceptedJob(input: RawJobInput, ids: { rawInputId: string; processingRunId: string; detectionId: string }) {
     await this.db.transaction(async (transaction) => {
@@ -37,6 +49,95 @@ export class JobRepository {
     });
   }
 
+  async findOrCreateJobOffer(
+    candidate: JobOfferInsert
+  ): Promise<JobOffer> {
+    if (candidate.sourceJobId) {
+      const existingBySourceJobId = await this.db
+        .select()
+        .from(jobOffers)
+        .where(
+          and(
+            eq(jobOffers.source, candidate.source),
+            eq(jobOffers.sourceJobId, candidate.sourceJobId)
+          )
+        )
+        .limit(1);
+
+      if (existingBySourceJobId.length === 1) {
+        return this.updateJobOffer(existingBySourceJobId[0], candidate);
+      }
+    }
+
+    if (candidate.normalizedUrl) {
+      const existingByUrl = await this.db
+        .select()
+        .from(jobOffers)
+        .where(eq(jobOffers.normalizedUrl, candidate.normalizedUrl))
+        .limit(1);
+
+      if (existingByUrl.length === 1) {
+        return this.updateJobOffer(existingByUrl[0], candidate);
+      }
+    }
+
+    const inserted = await this.db
+      .insert(jobOffers)
+      .values(candidate)
+      .returning();
+
+    return inserted[0];
+  }
+
+  async createAIUsage(input: {
+    detectionId: string;
+    provider: string;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCost?: string | null;
+  }) {
+    const inserted = await this.db
+      .insert(aiUsage)
+      .values({
+        id: randomUUID(),
+        detectionId: input.detectionId,
+        provider: input.provider,
+        model: input.model,
+        inputTokens: input.inputTokens,
+        outputTokens: input.outputTokens,
+        estimatedCost: input.estimatedCost ?? null,
+        createdAt: new Date()
+      })
+      .returning();
+
+    return inserted[0];
+  }
+
+  private async updateJobOffer(
+    existing: JobOffer,
+    candidate: JobOfferInsert
+  ): Promise<JobOffer> {
+    const updates = Object.fromEntries(
+      Object.entries(candidate).filter(
+        ([key, value]) =>
+          key !== "id" && value !== null && value !== undefined
+      )
+    ) as Partial<JobOfferInsert>;
+
+    if (Object.keys(updates).length === 0) {
+      return existing;
+    }
+
+    const updated = await this.db
+      .update(jobOffers)
+      .set(updates)
+      .where(eq(jobOffers.id, existing.id))
+      .returning();
+
+    return updated[0];
+  }
+
   async hasDetectionForRun(processingRunId: string): Promise<boolean> {
     const detection = await this.db
       .select({ id: jobDetections.id })
@@ -45,5 +146,69 @@ export class JobRepository {
       .limit(1);
 
     return detection.length === 1;
+  }
+
+  async getDetectionForRun(processingRunId: string): Promise<{
+    detectionId: string;
+    rawInput: RawJobInput;
+  } | undefined> {
+    const result = await this.db
+      .select({
+        detectionId: jobDetections.id,
+        rawInput: rawJobInputs
+      })
+      .from(jobDetections)
+      .innerJoin(
+        rawJobInputs,
+        eq(jobDetections.rawInputId, rawJobInputs.id)
+      )
+      .where(eq(jobDetections.processingRunId, processingRunId))
+      .limit(1);
+
+    const row = result[0];
+
+    if (!row) {
+      return undefined;
+    }
+
+    return {
+      detectionId: row.detectionId,
+      rawInput: {
+        source: row.rawInput.source,
+        source_job_id: row.rawInput.sourceJobId ?? undefined,
+        title: row.rawInput.title,
+        company: row.rawInput.company,
+        url: row.rawInput.url,
+        description: row.rawInput.description ?? undefined,
+        location: row.rawInput.location ?? undefined,
+        detected_at: row.rawInput.detectedAt,
+        raw_metadata: row.rawInput.rawMetadata as Record<string, unknown> | null
+      }
+    };
+  }
+
+  async updateFilterResult(
+    detectionId: string,
+    result: JobFilterResult
+  ): Promise<void> {
+    await this.db
+      .update(jobDetections)
+      .set({
+        filterStatus: result.status,
+        filterReasons: result.reasons
+      })
+      .where(eq(jobDetections.id, detectionId));
+  }
+
+  async updateDetectionJobOffer(
+    detectionId: string,
+    jobOfferId: string
+  ): Promise<void> {
+    await this.db
+      .update(jobDetections)
+      .set({
+        jobOfferId
+      })
+      .where(eq(jobDetections.id, detectionId));
   }
 }

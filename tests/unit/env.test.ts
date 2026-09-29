@@ -7,6 +7,7 @@ describe("loadEnvironment", () => {
     const environment = loadEnvironment({
       DATABASE_URL: "postgresql://user:password@localhost:5432/jobs",
       API_KEY: "secret",
+      ANTHROPIC_API_KEY: "test-anthropic-key",
       PROCESSING_RECOVERY_TIMEOUT_MS: "60000"
     });
 
@@ -19,6 +20,7 @@ describe("loadEnvironment", () => {
       loadEnvironment({
         DATABASE_URL: "postgresql://user:password@localhost:5432/jobs",
         API_KEY: "",
+        ANTHROPIC_API_KEY: "test-anthropic-key",
         PROCESSING_RECOVERY_TIMEOUT_MS: "60000"
       })
     ).toThrow();

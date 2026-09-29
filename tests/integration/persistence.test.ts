@@ -1,10 +1,12 @@
 import { beforeAll, beforeEach, afterAll, describe, expect, it } from "vitest";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { JobRepository } from "../../src/modules/jobs/job.repository.js";
 import { JobService } from "../../src/modules/jobs/job.service.js";
 import { processingRuns, rawJobInputs } from "../../src/database/schema/index.js";
 import { clearDatabase, createTestDatabase } from "../helpers/database.js";
+import { jobOffers } from "../../src/database/schema/index.js";
+import { randomUUID } from "node:crypto";
 
 const input = {
   source: "linkedin",
@@ -59,5 +61,334 @@ describe("persistencia de la aceptación", () => {
     const rawInputs = await connection.db.select().from(rawJobInputs);
     expect(existing.detectionId).toHaveLength(36);
     expect(rawInputs).toHaveLength(1);
+  });
+
+  it("crea un JobOffer nuevo", async () => {
+    const jobOfferId = randomUUID();
+
+    await connection.db.insert(jobOffers).values({
+      id: jobOfferId,
+      source: "linkedin",
+      sourceJobId: "job-123",
+      normalizedUrl: "https://example.com/jobs/job-123",
+      title: "Desarrollador Web",
+      company: "Example",
+      jobFamily: "WEB",
+      role: "WEB_DEVELOPER",
+      country: "España",
+      city: "Castellón de la Plana",
+      modality: "ONSITE",
+      distanceKm: 5,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    const result = await connection.db
+      .select()
+      .from(jobOffers);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: jobOfferId,
+      source: "linkedin",
+      sourceJobId: "job-123",
+      normalizedUrl: "https://example.com/jobs/job-123",
+      title: "Desarrollador Web"
+    });
+  });
+
+  it("permite que dos detecciones apunten al mismo JobOffer", async () => {
+    const jobOfferId = randomUUID();
+
+    await connection.db.insert(jobOffers).values({
+      id: jobOfferId,
+      source: "linkedin",
+      sourceJobId: "job-123",
+      normalizedUrl: "https://example.com/jobs/job-123",
+      title: "Desarrollador Web",
+      company: "Example",
+      jobFamily: "WEB",
+      role: "WEB_DEVELOPER",
+      country: "España",
+      city: "Castellón de la Plana",
+      modality: "REMOTE",
+      distanceKm: null,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    const detectionIds = [
+      randomUUID(),
+      randomUUID()
+    ];
+
+    // Aquí utilizaremos los IDs de RawJobInput y ProcessingRun
+    // que ya emplea el helper existente para crear detecciones.
+  });
+
+  it("reutiliza un JobOffer existente por source + sourceJobId", async () => {
+    const jobOfferId = randomUUID();
+
+    await connection.db.insert(jobOffers).values({
+      id: jobOfferId,
+      source: "linkedin",
+      sourceJobId: "job-123",
+      normalizedUrl: "https://example.com/jobs/job-123",
+      title: "Desarrollador Web",
+      company: "Example",
+      jobFamily: "WEB",
+      role: "WEB_DEVELOPER",
+      country: "España",
+      city: "Castellón de la Plana",
+      modality: "REMOTE",
+      distanceKm: null,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    const result = await connection.db
+      .select()
+      .from(jobOffers)
+      .where(
+        and(
+          eq(jobOffers.source, "linkedin"),
+          eq(jobOffers.sourceJobId, "job-123")
+        )
+      );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe(jobOfferId);
+  });
+
+  it("reutiliza un JobOffer existente por source + sourceJobId", async () => {
+    const repository = new JobRepository(connection.db);
+    const jobOfferId = randomUUID();
+
+    await connection.db.insert(jobOffers).values({
+      id: jobOfferId,
+      source: "linkedin",
+      sourceJobId: "job-123",
+      normalizedUrl: "https://example.com/jobs/job-123",
+      title: "Desarrollador Web",
+      company: "Example",
+      jobFamily: "WEB",
+      role: "WEB_DEVELOPER",
+      country: "España",
+      city: "Castellón de la Plana",
+      modality: "REMOTE",
+      distanceKm: null,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    const result = await repository.findOrCreateJobOffer({
+      id: randomUUID(),
+      source: "linkedin",
+      sourceJobId: "job-123",
+      normalizedUrl: "https://example.com/jobs/otra-url",
+      title: "Otro título",
+      company: "Otra empresa",
+      jobFamily: "SOFTWARE",
+      role: "SOFTWARE_DEVELOPER",
+      country: "España",
+      city: "Valencia",
+      modality: "ONSITE",
+      distanceKm: 60,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    expect(result.id).toBe(jobOfferId);
+  });
+
+  it("reutiliza un JobOffer existente por normalizedUrl", async () => {
+    const repository = new JobRepository(connection.db);
+    const jobOfferId = randomUUID();
+
+    await connection.db.insert(jobOffers).values({
+      id: jobOfferId,
+      source: "linkedin",
+      sourceJobId: "job-123",
+      normalizedUrl: "https://example.com/jobs/job-123",
+      title: "Desarrollador Web",
+      company: "Example",
+      jobFamily: "WEB",
+      role: "WEB_DEVELOPER",
+      country: "España",
+      city: "Castellón de la Plana",
+      modality: "REMOTE",
+      distanceKm: null,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    const result = await repository.findOrCreateJobOffer({
+      id: randomUUID(),
+      source: "infojobs",
+      sourceJobId: "different-job-id",
+      normalizedUrl: "https://example.com/jobs/job-123",
+      title: "Otro título",
+      company: "Otra empresa",
+      jobFamily: "SOFTWARE",
+      role: "SOFTWARE_DEVELOPER",
+      country: "España",
+      city: "Valencia",
+      modality: "ONSITE",
+      distanceKm: 60,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    expect(result.id).toBe(jobOfferId);
+  });
+
+  it("crea un nuevo JobOffer cuando no existe una coincidencia", async () => {
+    const repository = new JobRepository(connection.db);
+
+    const result = await repository.findOrCreateJobOffer({
+      id: randomUUID(),
+      source: "linkedin",
+      sourceJobId: "job-new",
+      normalizedUrl: "https://example.com/jobs/job-new",
+      title: "Backend Developer",
+      company: "Example",
+      jobFamily: "SOFTWARE",
+      role: "BACKEND_DEVELOPER",
+      country: "España",
+      city: "Castellón de la Plana",
+      modality: "REMOTE",
+      distanceKm: null,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    const stored = await connection.db
+      .select()
+      .from(jobOffers)
+      .where(eq(jobOffers.id, result.id));
+
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({
+      id: result.id,
+      source: "linkedin",
+      sourceJobId: "job-new",
+      normalizedUrl: "https://example.com/jobs/job-new",
+      title: "Backend Developer"
+    });
+  });
+
+  it("actualiza un JobOffer existente sin borrar datos con null", async () => {
+    const repository = new JobRepository(connection.db);
+    const jobOfferId = randomUUID();
+
+    await connection.db.insert(jobOffers).values({
+      id: jobOfferId,
+      source: "linkedin",
+      sourceJobId: "job-123",
+      normalizedUrl: "https://example.com/jobs/job-123",
+      title: "Desarrollador Web",
+      company: "Empresa X",
+      jobFamily: "WEB",
+      role: "WEB_DEVELOPER",
+      country: "España",
+      city: "Castellón",
+      modality: "REMOTE",
+      distanceKm: null,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    const result = await repository.findOrCreateJobOffer({
+      id: randomUUID(),
+      source: "linkedin",
+      sourceJobId: "job-123",
+      normalizedUrl: "https://example.com/jobs/job-123",
+      title: "Desarrollador Web Full Stack",
+      company: "Empresa X",
+      jobFamily: "SOFTWARE",
+      role: "FULL_STACK_DEVELOPER",
+      country: "España",
+      city: null,
+      modality: "HYBRID",
+      distanceKm: 12,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    expect(result.id).toBe(jobOfferId);
+
+    const stored = await connection.db
+      .select()
+      .from(jobOffers)
+      .where(eq(jobOffers.id, jobOfferId));
+
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({
+      id: jobOfferId,
+      title: "Desarrollador Web Full Stack",
+      jobFamily: "SOFTWARE",
+      role: "FULL_STACK_DEVELOPER",
+      city: "Castellón",
+      modality: "HYBRID",
+      distanceKm: 12
+    });
+  });
+
+  it("persiste el uso de IA asociado a una detección", async () => {
+  const repository = new JobRepository(connection.db);
+
+  const { detectionId } = await service.accept(input);
+
+  const result = await repository.createAIUsage({
+    detectionId,
+    provider: "anthropic",
+    model: "claude-haiku-4-5",
+    inputTokens: 100,
+    outputTokens: 50,
+    estimatedCost: null
+  });
+
+  expect(result).toMatchObject({
+    detectionId,
+    provider: "anthropic",
+    model: "claude-haiku-4-5",
+    inputTokens: 100,
+    outputTokens: 50,
+    estimatedCost: null
+  });
+});
+
+  it("recupera una detección y su RawJobInput por processingRunId", async () => {
+    const repository = new JobRepository(connection.db);
+
+    const { detectionId } = await service.accept(input);
+
+    const runs = await connection.db.select().from(processingRuns);
+    const run = runs[0];
+
+    expect(run).toBeDefined();
+
+    const result = await repository.getDetectionForRun(run.id);
+
+    expect(result).toBeDefined();
+    expect(result?.detectionId).toBe(detectionId);
+
+    expect(result?.rawInput).toMatchObject({
+      source: input.source,
+      title: input.title,
+      company: input.company,
+      url: input.url,
+      detected_at: input.detected_at
+    });
   });
 });

@@ -9,18 +9,30 @@ import { JobRepository } from "./modules/jobs/job.repository.js";
 import { JobService } from "./modules/jobs/job.service.js";
 import { Processor } from "./modules/processing/processor.js";
 import { ProcessingRepository } from "./modules/processing/processing.repository.js";
+import { JobEnrichmentService } from "./modules/jobs/job-enrichment.service.js";
 
-export function createApp(environment: Environment, connection?: DatabaseConnection): FastifyInstance {
+export function createApp(
+  environment: Environment,
+  connection?: DatabaseConnection
+): FastifyInstance {
   const database = connection ?? createDatabase(environment.DATABASE_URL);
   const app = Fastify();
+
   const jobRepository = new JobRepository(database.db);
   const processingRepository = new ProcessingRepository(database.db);
+
+  const jobEnrichmentService = new JobEnrichmentService(
+    environment.ANTHROPIC_API_KEY
+  );
+
   const processor = new Processor(
     processingRepository,
     jobRepository,
+    jobEnrichmentService,
     environment.PROCESSING_RECOVERY_TIMEOUT_MS,
     (error) => app.log.error(error, "Error en el procesador interno")
   );
+
   const jobService = new JobService(jobRepository);
 
   app.addHook("preHandler", createAuthentication(environment.API_KEY));

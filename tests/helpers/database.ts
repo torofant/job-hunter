@@ -10,5 +10,12 @@ export function createTestDatabase() {
 }
 
 export async function clearDatabase(connection: ReturnType<typeof createDatabase>): Promise<void> {
-  await connection.db.execute(sql`TRUNCATE TABLE job_detections, processing_runs, raw_job_inputs CASCADE`);
+  await connection.db.execute(sql`
+  TRUNCATE TABLE
+    job_detections,
+    job_offers,
+    processing_runs,
+    raw_job_inputs
+  CASCADE
+`);
 }

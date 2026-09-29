@@ -15,6 +15,27 @@
       "when": 1790238454658,
       "tag": "0001_condemned_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790326078251,
+      "tag": "0002_groovy_fenris",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790332161486,
+      "tag": "0003_sweet_star_brand",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790590772003,
+      "tag": "0004_amused_felicia_hardy",
+      "breakpoints": true
     }
   ]
 }
