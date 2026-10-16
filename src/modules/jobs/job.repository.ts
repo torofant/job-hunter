@@ -4,6 +4,7 @@ import type { RawJobInput } from "../../api/schemas/raw-job-input.schema.js";
 import type { Database } from "../../database/client.js";
 import {
   aiUsage,
+  jobAnalyses,
   jobDetections,
   jobOffers,
   processingRuns,
@@ -12,6 +13,13 @@ import {
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { JobFilterResult } from "./job.filter.js";
+import type { Requirement } from "./requirement.js";
+import { requirementEntitySchema } from "./requirement.js";
+import type { RequirementMatch } from "./requirement-match.js";
+import { buildMatchingSummary } from "./matching-summary.js";
+import { haveSameRequirementSet } from "./requirement.normalizer.js";
+import { requirements } from "../../database/schema/index.js";
+import { requirementMatches } from "../../database/schema/index.js";
 
 type JobOfferInsert = InferInsertModel<typeof jobOffers>;
 type JobOffer = InferSelectModel<typeof jobOffers>;
@@ -93,6 +101,8 @@ export class JobRepository {
     detectionId: string;
     provider: string;
     model: string;
+    purpose: "ENRICHMENT" | "REQUIREMENT_EXTRACTION";
+    promptVersion: string | null;
     inputTokens: number;
     outputTokens: number;
     estimatedCost?: string | null;
@@ -104,6 +114,8 @@ export class JobRepository {
         detectionId: input.detectionId,
         provider: input.provider,
         model: input.model,
+        purpose: input.purpose,
+        promptVersion: input.promptVersion,
         inputTokens: input.inputTokens,
         outputTokens: input.outputTokens,
         estimatedCost: input.estimatedCost ?? null,
@@ -112,6 +124,251 @@ export class JobRepository {
       .returning();
 
     return inserted[0];
+  }
+
+  async createPendingJobAnalysis(input: {
+    jobOfferId: string;
+    processingRunId: string;
+  }): Promise<{
+    id: string;
+    requirementExtractionStatus: "PENDING" | "COMPLETED" | "FAILED";
+    createdAt: Date;
+  }> {
+    const [existingAnalysis] = await this.db
+      .select({
+        id: jobAnalyses.id,
+        jobOfferId: jobAnalyses.jobOfferId,
+        requirementExtractionStatus: jobAnalyses.requirementExtractionStatus,
+        createdAt: jobAnalyses.createdAt
+      })
+      .from(jobAnalyses)
+      .where(eq(jobAnalyses.processingRunId, input.processingRunId))
+      .limit(1);
+
+    if (existingAnalysis) {
+      if (existingAnalysis.jobOfferId !== input.jobOfferId) {
+        throw new Error(
+          `El JobAnalysis existente para ProcessingRun ${input.processingRunId} pertenece a otro JobOffer`
+        );
+      }
+
+      return {
+        id: existingAnalysis.id,
+        requirementExtractionStatus:
+          existingAnalysis.requirementExtractionStatus,
+          createdAt: existingAnalysis.createdAt
+      };
+    }
+
+    const id = randomUUID();
+    const createdAt = new Date();
+
+    await this.db.insert(jobAnalyses).values({
+      id,
+      jobOfferId: input.jobOfferId,
+      processingRunId: input.processingRunId,
+      version: 1,
+      matchingSummary: null,
+      requirementExtractionStatus: "PENDING",
+      createdAt: createdAt
+    });
+
+    return {
+      id,
+      requirementExtractionStatus: "PENDING",
+      createdAt
+    };
+  }
+
+  async persistCompletedJobAnalysis(input: {
+    jobAnalysisId: string;
+    requirements: Requirement[];
+    matches: RequirementMatch[];
+    matchingSummary: ReturnType<typeof buildMatchingSummary>;
+  }): Promise<void> {
+    const categoryToDb = {
+      technology: "TECHNOLOGY",
+      experience: "EXPERIENCE",
+      language: "LANGUAGE"
+    } as const;
+
+    const typeToDb = {
+      single: "SINGLE",
+      alternative: "ALTERNATIVE",
+      group: "GROUP"
+    } as const;
+
+    const importanceToDb = {
+      required: "REQUIRED",
+      preferred: "PREFERRED"
+    } as const;
+
+    const resultToDb = {
+      MATCH: "MATCH",
+      PARTIAL: "PARTIAL",
+      MISSING: "MISSING",
+      UNKNOWN: "UNKNOWN",
+      "N/A": "N_A"
+    } as const;
+
+    const identity = (requirement: Requirement): string =>
+      JSON.stringify({
+        category: requirement.category,
+        type: requirement.type,
+        importance: requirement.importance,
+        data: requirement.data
+      });
+
+    // Cada requisito debe tener exactamente una coincidencia.
+    const matchesByRequirementId = new Map(
+      input.matches.map((match) => [match.requirementId, match])
+    );
+
+    if (
+      matchesByRequirementId.size !== input.matches.length ||
+      input.matches.length !== input.requirements.length ||
+      input.requirements.some(
+        (requirement) => !matchesByRequirementId.has(requirement.id)
+      ) ||
+      input.matches.some(
+        (match) => !input.requirements.some(
+          (requirement) => requirement.id === match.requirementId
+        )
+      )
+    ) {
+      throw new Error(
+        "Los requisitos y sus coincidencias no corresponden entre sí"
+      );
+    }
+
+    await this.db.transaction(async (transaction) => {
+      const [analysis] = await transaction
+        .select()
+        .from(jobAnalyses)
+        .where(eq(jobAnalyses.id, input.jobAnalysisId))
+        .limit(1);
+
+      if (!analysis) {
+        throw new Error("JobAnalysis no encontrado");
+      }
+
+      if (analysis.requirementExtractionStatus !== "PENDING") {
+        throw new Error("JobAnalysis no está en estado PENDING");
+      }
+
+      const activeRows = await transaction
+        .select()
+        .from(requirements)
+        .where(
+          and(
+            eq(requirements.jobOfferId, analysis.jobOfferId),
+            eq(requirements.active, true)
+          )
+        );
+
+      const existingRequirements = activeRows.map((row) =>
+        requirementEntitySchema.parse({
+          id: row.id,
+          category: row.category.toLowerCase(),
+          type: row.type.toLowerCase(),
+          importance: row.importance.toLowerCase(),
+          data: row.data
+        })
+      );
+
+      const persistedIdByIdentity = new Map<string, string>();
+
+      if (
+        haveSameRequirementSet(
+          existingRequirements,
+          input.requirements
+        )
+      ) {
+        // El conjunto no ha cambiado: conservamos los IDs persistidos.
+        for (const requirement of existingRequirements) {
+          persistedIdByIdentity.set(
+            identity(requirement),
+            requirement.id
+          );
+        }
+      } else {
+        // El conjunto ha cambiado: desactivamos los requisitos anteriores.
+        await transaction
+          .update(requirements)
+          .set({ active: false })
+          .where(
+            and(
+              eq(requirements.jobOfferId, analysis.jobOfferId),
+              eq(requirements.active, true)
+            )
+          );
+
+        // Insertamos el conjunto nuevo, si no está vacío.
+        if (input.requirements.length > 0) {
+          await transaction.insert(requirements).values(
+            input.requirements.map((requirement) => ({
+              id: requirement.id,
+              jobOfferId: analysis.jobOfferId,
+              category: categoryToDb[requirement.category],
+              type: typeToDb[requirement.type],
+              importance: importanceToDb[requirement.importance],
+              data: requirement.data,
+              active: true
+            }))
+          );
+        }
+
+        for (const requirement of input.requirements) {
+          persistedIdByIdentity.set(
+            identity(requirement),
+            requirement.id
+          );
+        }
+      }
+
+      // Guardamos las coincidencias con los IDs realmente persistidos.
+      if (input.matches.length > 0) {
+        await transaction.insert(requirementMatches).values(
+          input.matches.map((match) => {
+            const requirement = input.requirements.find(
+              (item) => item.id === match.requirementId
+            );
+
+            if (!requirement) {
+              throw new Error(
+                `No se encuentra el requisito ${match.requirementId}`
+              );
+            }
+
+            const persistedRequirementId = persistedIdByIdentity.get(
+              identity(requirement)
+            );
+
+            if (!persistedRequirementId) {
+              throw new Error(
+                `No se ha podido resolver el ID persistido de ${match.requirementId}`
+              );
+            }
+
+            return {
+              id: randomUUID(),
+              jobAnalysisId: input.jobAnalysisId,
+              requirementId: persistedRequirementId,
+              result: resultToDb[match.result],
+              evidence: match.evidence
+            };
+          })
+        );
+      }
+
+      await transaction
+        .update(jobAnalyses)
+        .set({
+          matchingSummary: input.matchingSummary,
+          requirementExtractionStatus: "COMPLETED"
+        })
+        .where(eq(jobAnalyses.id, input.jobAnalysisId));
+    });
   }
 
   private async updateJobOffer(
@@ -210,5 +467,28 @@ export class JobRepository {
         jobOfferId
       })
       .where(eq(jobDetections.id, detectionId));
+  }
+
+  async markRequirementExtractionFailed(
+    jobAnalysisId: string
+  ): Promise<void> {
+    const updated = await this.db
+      .update(jobAnalyses)
+      .set({
+        requirementExtractionStatus: "FAILED"
+      })
+      .where(
+        and(
+          eq(jobAnalyses.id, jobAnalysisId),
+          eq(jobAnalyses.requirementExtractionStatus, "PENDING")
+        )
+      )
+      .returning({ id: jobAnalyses.id });
+
+    if (updated.length === 0) {
+      throw new Error(
+        "JobAnalysis no encontrado o no está en estado PENDING"
+      );
+    }
   }
 }

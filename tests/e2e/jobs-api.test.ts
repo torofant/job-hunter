@@ -2,18 +2,112 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 
 import { createApp } from "../../src/app.js";
-import { jobDetections, processingRuns } from "../../src/database/schema/index.js";
+import {
+  jobDetections,
+  processingRuns,
+  userProfiles
+} from "../../src/database/schema/index.js";
 import { clearDatabase, createTestDatabase } from "../helpers/database.js";
 import { testEnvironment } from "../helpers/environment.js";
+import type { JobEnrichmentService } from "../../src/modules/jobs/job-enrichment.service.js";
+import type { JobRequirementExtractionService } from "../../src/modules/jobs/requirement-extraction.service.js";
 
 const processingTimeoutMs = 1_000;
 const pollingIntervalMs = 10;
 
 describe("POST /api/jobs", () => {
   const connection = createTestDatabase();
-  const app = createApp(testEnvironment, connection);
+
+  const app = createApp(testEnvironment, connection, {
+    jobEnrichmentService: {
+      enrich: async () => ({
+        enrichment: {
+          jobFamily: "WEB",
+          role: "WEB_DEVELOPER",
+          country: "Spain",
+          city: "Castellón de la Plana",
+          modality: "REMOTE",
+          contract: "PERMANENT",
+          employmentType: "EMPLOYEE",
+          workingHours: "FULL_TIME"
+        },
+        inputTokens: 100,
+        outputTokens: 50,
+        model: "claude-haiku-4-5"
+      })
+    } as unknown as JobEnrichmentService,
+
+    requirementExtractionService: {
+      extract: async () => ({
+        result: { requirements: [] },
+        inputTokens: 100,
+        outputTokens: 20,
+        model: "claude-haiku-4-5",
+        promptVersion: "1.0.0"
+      })
+    } as unknown as JobRequirementExtractionService
+  });
 
   beforeAll(async () => {
+    await connection.db
+      .insert(userProfiles)
+      .values({
+        id: "00000000-0000-4000-8000-000000000001",
+        locationPreferences: {
+          remoteAllowed: true,
+          hybridAllowed: true,
+          onsiteAllowed: true,
+          hybridMaxCity: null,
+          onsiteMaxDistanceKm: null,
+          relocationAllowed: false
+        },
+        employmentPreferences: {
+          fullTimeAllowed: true,
+          partTimeAllowed: true,
+          permanentAllowed: true,
+          temporaryAllowed: false,
+          internshipAllowed: false,
+          scholarshipAllowed: false,
+          traineeAllowed: false,
+          freelanceAllowed: true,
+          selfEmployedAllowed: true
+        },
+        salaryPreferences: {
+          currency: "EUR",
+          minimum: 20000,
+          desired: 24000
+        }
+      })
+      .onConflictDoUpdate({
+        target: userProfiles.id,
+        set: {
+          locationPreferences: {
+            remoteAllowed: true,
+            hybridAllowed: true,
+            onsiteAllowed: true,
+            hybridMaxCity: null,
+            onsiteMaxDistanceKm: null,
+            relocationAllowed: false
+          },
+          employmentPreferences: {
+            fullTimeAllowed: true,
+            partTimeAllowed: true,
+            permanentAllowed: true,
+            temporaryAllowed: false,
+            internshipAllowed: false,
+            scholarshipAllowed: false,
+            traineeAllowed: false,
+            freelanceAllowed: true,
+            selfEmployedAllowed: true
+          },
+          salaryPreferences: {
+            currency: "EUR",
+            minimum: 20000,
+            desired: 24000
+          }
+        }
+      });
+
     await app.ready();
   });
 
@@ -25,7 +119,10 @@ describe("POST /api/jobs", () => {
     await app.close();
   });
 
-  async function waitForProcessingRun(detectionId: string, expectedStatus: "COMPLETED") {
+  async function waitForProcessingRun(
+    detectionId: string,
+    expectedStatus: "COMPLETED"
+  ) {
     const deadline = Date.now() + processingTimeoutMs;
 
     while (Date.now() < deadline) {
@@ -48,7 +145,9 @@ describe("POST /api/jobs", () => {
       await new Promise((resolve) => setTimeout(resolve, pollingIntervalMs));
     }
 
-    throw new Error(`El procesamiento ${detectionId} no alcanzó ${expectedStatus} en ${processingTimeoutMs} ms`);
+    throw new Error(
+      `El procesamiento ${detectionId} no alcanzó ${expectedStatus} en ${processingTimeoutMs} ms`
+    );
   }
 
   it("acepta una entrada autenticada y la procesa", async () => {
@@ -74,6 +173,7 @@ describe("POST /api/jobs", () => {
 
     const detectionId = response.json<{ detection_id: string }>().detection_id;
     const run = await waitForProcessingRun(detectionId, "COMPLETED");
+
     expect(run.status).toBe("COMPLETED");
   });
 
@@ -85,7 +185,10 @@ describe("POST /api/jobs", () => {
     });
 
     expect(response.statusCode).toBe(401);
-    expect(response.json()).toEqual({ error: "UNAUTHORIZED", message: "No autorizado" });
+    expect(response.json()).toEqual({
+      error: "UNAUTHORIZED",
+      message: "No autorizado"
+    });
   });
 
   it("rechaza una clave incorrecta", async () => {
@@ -97,7 +200,10 @@ describe("POST /api/jobs", () => {
     });
 
     expect(response.statusCode).toBe(401);
-    expect(response.json()).toEqual({ error: "UNAUTHORIZED", message: "No autorizado" });
+    expect(response.json()).toEqual({
+      error: "UNAUTHORIZED",
+      message: "No autorizado"
+    });
   });
 
   it("rechaza una entrada inválida", async () => {

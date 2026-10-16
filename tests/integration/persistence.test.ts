@@ -3,10 +3,19 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { JobRepository } from "../../src/modules/jobs/job.repository.js";
 import { JobService } from "../../src/modules/jobs/job.service.js";
-import { processingRuns, rawJobInputs } from "../../src/database/schema/index.js";
 import { clearDatabase, createTestDatabase } from "../helpers/database.js";
-import { jobOffers } from "../../src/database/schema/index.js";
 import { randomUUID } from "node:crypto";
+import {
+  jobAnalyses,
+  jobOffers,
+  processingRuns,
+  rawJobInputs,
+  requirements,
+  requirementMatches
+} from "../../src/database/schema/index.js";
+import type { Requirement } from "../../src/modules/jobs/requirement.js";
+import type { RequirementMatch } from "../../src/modules/jobs/requirement-match.js";
+import { buildMatchingSummary } from "../../src/modules/jobs/matching-summary.js";
 
 const input = {
   source: "linkedin",
@@ -345,28 +354,32 @@ describe("persistencia de la aceptación", () => {
   });
 
   it("persiste el uso de IA asociado a una detección", async () => {
-  const repository = new JobRepository(connection.db);
+    const repository = new JobRepository(connection.db);
 
-  const { detectionId } = await service.accept(input);
+    const { detectionId } = await service.accept(input);
 
-  const result = await repository.createAIUsage({
-    detectionId,
-    provider: "anthropic",
-    model: "claude-haiku-4-5",
-    inputTokens: 100,
-    outputTokens: 50,
-    estimatedCost: null
+    const result = await repository.createAIUsage({
+      detectionId,
+      provider: "anthropic",
+      model: "claude-haiku-4-5",
+      purpose: "ENRICHMENT",
+      promptVersion: "1.0.0",
+      inputTokens: 100,
+      outputTokens: 50,
+      estimatedCost: null
+    });
+
+    expect(result).toMatchObject({
+      detectionId,
+      provider: "anthropic",
+      model: "claude-haiku-4-5",
+      purpose: "ENRICHMENT",
+      promptVersion: "1.0.0",
+      inputTokens: 100,
+      outputTokens: 50,
+      estimatedCost: null
+    });
   });
-
-  expect(result).toMatchObject({
-    detectionId,
-    provider: "anthropic",
-    model: "claude-haiku-4-5",
-    inputTokens: 100,
-    outputTokens: 50,
-    estimatedCost: null
-  });
-});
 
   it("recupera una detección y su RawJobInput por processingRunId", async () => {
     const repository = new JobRepository(connection.db);
@@ -391,4 +404,514 @@ describe("persistencia de la aceptación", () => {
       detected_at: input.detected_at
     });
   });
+
+  it("persiste los requisitos, las coincidencias y el resumen en una transacción", async () => {
+    const repository = new JobRepository(connection.db);
+
+    // Creamos el ProcessingRun necesario para el análisis.
+    await service.accept(input);
+    const [run] = await connection.db.select().from(processingRuns);
+
+    const jobOfferId = randomUUID();
+    const jobAnalysisId = randomUUID();
+
+    await connection.db.insert(jobOffers).values({
+      id: jobOfferId,
+      source: "linkedin",
+      sourceJobId: "job-analysis-1",
+      normalizedUrl: "https://example.com/jobs/job-analysis-1",
+      title: "Desarrollador Web",
+      company: "Example",
+      jobFamily: "WEB",
+      role: "WEB_DEVELOPER",
+      country: "España",
+      city: "Castellón de la Plana",
+      modality: "REMOTE",
+      distanceKm: null,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    await connection.db.insert(jobAnalyses).values({
+      id: jobAnalysisId,
+      jobOfferId,
+      processingRunId: run.id,
+      version: 1,
+      matchingSummary: null,
+      requirementExtractionStatus: "PENDING",
+      createdAt: new Date()
+    });
+
+    const requirement: Requirement = {
+      id: randomUUID(),
+      category: "technology",
+      type: "single",
+      importance: "required",
+      data: { technology: "JavaScript" }
+    };
+
+    const match: RequirementMatch = {
+      requirementId: requirement.id,
+      result: "MATCH",
+      evidence: { source: "technology_profile" }
+    };
+
+    const matchingSummary = buildMatchingSummary([
+      { requirement, match }
+    ]);
+
+    await repository.persistCompletedJobAnalysis({
+      jobAnalysisId,
+      requirements: [requirement],
+      matches: [match],
+      matchingSummary
+    });
+
+    const persistedRequirements = await connection.db
+      .select()
+      .from(requirements);
+
+    const persistedMatches = await connection.db
+      .select()
+      .from(requirementMatches);
+
+    const [persistedAnalysis] = await connection.db
+      .select()
+      .from(jobAnalyses);
+
+    expect(persistedRequirements).toHaveLength(1);
+    expect(persistedRequirements[0]).toMatchObject({
+      id: requirement.id,
+      jobOfferId,
+      category: "TECHNOLOGY",
+      type: "SINGLE",
+      importance: "REQUIRED",
+      active: true,
+      data: { technology: "JavaScript" }
+    });
+
+    expect(persistedMatches).toHaveLength(1);
+    expect(persistedMatches[0]).toMatchObject({
+      jobAnalysisId,
+      requirementId: requirement.id,
+      result: "MATCH",
+      evidence: { source: "technology_profile" }
+    });
+
+    expect(persistedAnalysis).toMatchObject({
+      id: jobAnalysisId,
+      requirementExtractionStatus: "COMPLETED",
+      matchingSummary
+    });
+  });
+
+  it("reutiliza los IDs de requisitos activos cuando el conjunto no cambia", async () => {
+    const repository = new JobRepository(connection.db);
+
+    await service.accept(input);
+    const [run] = await connection.db.select().from(processingRuns);
+
+    const jobOfferId = randomUUID();
+    const firstAnalysisId = randomUUID();
+    const secondAnalysisId = randomUUID();
+    const requirementId = randomUUID();
+
+    await connection.db.insert(jobOffers).values({
+      id: jobOfferId,
+      source: "linkedin",
+      sourceJobId: "reuse-requirement",
+      normalizedUrl: "https://example.com/jobs/reuse-requirement",
+      title: "Desarrollador Web",
+      company: "Example",
+      jobFamily: "WEB",
+      role: "WEB_DEVELOPER",
+      country: "España",
+      city: "Castellón de la Plana",
+      modality: "REMOTE",
+      distanceKm: null,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    const requirement: Requirement = {
+      id: requirementId,
+      category: "technology",
+      type: "single",
+      importance: "required",
+      data: { technology: "JavaScript" }
+    };
+
+    const firstMatch: RequirementMatch = {
+      requirementId,
+      result: "MATCH",
+      evidence: { source: "technology_profile" }
+    };
+
+    await connection.db.insert(jobAnalyses).values([
+      {
+        id: firstAnalysisId,
+        jobOfferId,
+        processingRunId: run.id,
+        version: 1,
+        matchingSummary: null,
+        requirementExtractionStatus: "PENDING",
+        createdAt: new Date()
+      },
+      {
+        id: secondAnalysisId,
+        jobOfferId,
+        processingRunId: run.id,
+        version: 1,
+        matchingSummary: null,
+        requirementExtractionStatus: "PENDING",
+        createdAt: new Date()
+      }
+    ]);
+
+    await repository.persistCompletedJobAnalysis({
+      jobAnalysisId: firstAnalysisId,
+      requirements: [requirement],
+      matches: [firstMatch],
+      matchingSummary: buildMatchingSummary([
+        { requirement, match: firstMatch }
+      ])
+    });
+
+    // La segunda extracción trae el mismo requisito con otro ID.
+    const newlyExtractedRequirement: Requirement = {
+      ...requirement,
+      id: randomUUID()
+    };
+
+    const secondMatch: RequirementMatch = {
+      requirementId: newlyExtractedRequirement.id,
+      result: "MATCH",
+      evidence: { source: "technology_profile" }
+    };
+
+    await repository.persistCompletedJobAnalysis({
+      jobAnalysisId: secondAnalysisId,
+      requirements: [newlyExtractedRequirement],
+      matches: [secondMatch],
+      matchingSummary: buildMatchingSummary([
+        { requirement: newlyExtractedRequirement, match: secondMatch }
+      ])
+    });
+
+    const persistedRequirements = await connection.db
+      .select()
+      .from(requirements);
+
+    const persistedMatches = await connection.db
+      .select()
+      .from(requirementMatches);
+
+    expect(persistedRequirements).toHaveLength(1);
+    expect(persistedRequirements[0]).toMatchObject({
+      id: requirementId,
+      active: true
+    });
+
+    expect(persistedMatches).toHaveLength(2);
+    expect(persistedMatches.map((match) => match.requirementId)).toEqual([
+      requirementId,
+      requirementId
+    ]);
+  });
+
+  it("desactiva los requisitos anteriores cuando cambia el conjunto", async () => {
+    const repository = new JobRepository(connection.db);
+
+    await service.accept(input);
+    const [run] = await connection.db.select().from(processingRuns);
+
+    const jobOfferId = randomUUID();
+    const firstAnalysisId = randomUUID();
+    const secondAnalysisId = randomUUID();
+
+    await connection.db.insert(jobOffers).values({
+      id: jobOfferId,
+      source: "linkedin",
+      sourceJobId: "replace-requirement",
+      normalizedUrl: "https://example.com/jobs/replace-requirement",
+      title: "Desarrollador Web",
+      company: "Example",
+      jobFamily: "WEB",
+      role: "WEB_DEVELOPER",
+      country: "España",
+      city: "Castellón de la Plana",
+      modality: "REMOTE",
+      distanceKm: null,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    await connection.db.insert(jobAnalyses).values([
+      {
+        id: firstAnalysisId,
+        jobOfferId,
+        processingRunId: run.id,
+        version: 1,
+        matchingSummary: null,
+        requirementExtractionStatus: "PENDING",
+        createdAt: new Date()
+      },
+      {
+        id: secondAnalysisId,
+        jobOfferId,
+        processingRunId: run.id,
+        version: 1,
+        matchingSummary: null,
+        requirementExtractionStatus: "PENDING",
+        createdAt: new Date()
+      }
+    ]);
+
+    const oldRequirement: Requirement = {
+      id: randomUUID(),
+      category: "technology",
+      type: "single",
+      importance: "required",
+      data: { technology: "JavaScript" }
+    };
+
+    const oldMatch: RequirementMatch = {
+      requirementId: oldRequirement.id,
+      result: "MATCH",
+      evidence: { source: "technology_profile" }
+    };
+
+    await repository.persistCompletedJobAnalysis({
+      jobAnalysisId: firstAnalysisId,
+      requirements: [oldRequirement],
+      matches: [oldMatch],
+      matchingSummary: buildMatchingSummary([
+        { requirement: oldRequirement, match: oldMatch }
+      ])
+    });
+
+    const newRequirement: Requirement = {
+      id: randomUUID(),
+      category: "technology",
+      type: "single",
+      importance: "required",
+      data: { technology: "TypeScript" }
+    };
+
+    const newMatch: RequirementMatch = {
+      requirementId: newRequirement.id,
+      result: "MATCH",
+      evidence: { source: "technology_profile" }
+    };
+
+    await repository.persistCompletedJobAnalysis({
+      jobAnalysisId: secondAnalysisId,
+      requirements: [newRequirement],
+      matches: [newMatch],
+      matchingSummary: buildMatchingSummary([
+        { requirement: newRequirement, match: newMatch }
+      ])
+    });
+
+    const persistedRequirements = await connection.db
+      .select()
+      .from(requirements);
+
+    const persistedMatches = await connection.db
+      .select()
+      .from(requirementMatches);
+
+    expect(persistedRequirements).toHaveLength(2);
+    expect(persistedRequirements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: oldRequirement.id,
+          active: false,
+          data: { technology: "JavaScript" }
+        }),
+        expect.objectContaining({
+          id: newRequirement.id,
+          active: true,
+          data: { technology: "TypeScript" }
+        })
+      ])
+    );
+
+    // La coincidencia histórica sigue apuntando al requisito antiguo.
+    expect(persistedMatches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          jobAnalysisId: firstAnalysisId,
+          requirementId: oldRequirement.id
+        }),
+        expect.objectContaining({
+          jobAnalysisId: secondAnalysisId,
+          requirementId: newRequirement.id
+        })
+      ])
+    );
+  });
+
+  it("marca como FAILED un JobAnalysis pendiente", async () => {
+    const repository = new JobRepository(connection.db);
+
+    await service.accept(input);
+    const [run] = await connection.db.select().from(processingRuns);
+
+    const jobOfferId = randomUUID();
+    const jobAnalysisId = randomUUID();
+
+    await connection.db.insert(jobOffers).values({
+      id: jobOfferId,
+      source: "linkedin",
+      sourceJobId: "failed-analysis",
+      normalizedUrl: "https://example.com/jobs/failed-analysis",
+      title: "Desarrollador Web",
+      company: "Example",
+      jobFamily: "WEB",
+      role: "WEB_DEVELOPER",
+      country: "España",
+      city: "Castellón de la Plana",
+      modality: "REMOTE",
+      distanceKm: null,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    await connection.db.insert(jobAnalyses).values({
+      id: jobAnalysisId,
+      jobOfferId,
+      processingRunId: run.id,
+      version: 1,
+      matchingSummary: null,
+      requirementExtractionStatus: "PENDING",
+      createdAt: new Date()
+    });
+
+    await repository.markRequirementExtractionFailed(jobAnalysisId);
+
+    const [analysis] = await connection.db
+      .select()
+      .from(jobAnalyses)
+      .where(eq(jobAnalyses.id, jobAnalysisId));
+
+    expect(analysis?.requirementExtractionStatus).toBe("FAILED");
+
+    await expect(
+      repository.markRequirementExtractionFailed(jobAnalysisId)
+    ).rejects.toThrow(
+      "JobAnalysis no encontrado o no está en estado PENDING"
+    );
+  });
+
+  it("crea y reutiliza un JobAnalysis pendiente", async () => {
+    const repository = new JobRepository(connection.db);
+    await service.accept(input);
+
+    const [run] = await connection.db.select().from(processingRuns);
+    expect(run).toBeDefined();
+
+    const jobOfferId = randomUUID();
+
+    await connection.db.insert(jobOffers).values({
+      id: jobOfferId,
+      source: "linkedin",
+      sourceJobId: "pending-analysis",
+      normalizedUrl: "https://example.com/jobs/pending-analysis",
+      title: "Desarrollador Web",
+      company: "Example",
+      jobFamily: "WEB",
+      role: "WEB_DEVELOPER",
+      country: "España",
+      city: "Castellón de la Plana",
+      modality: "REMOTE",
+      distanceKm: null,
+      contract: "PERMANENT",
+      employmentType: "EMPLOYEE",
+      workingHours: "FULL_TIME"
+    });
+
+    const first = await repository.createPendingJobAnalysis({
+      jobOfferId,
+      processingRunId: run!.id
+    });
+
+    const second = await repository.createPendingJobAnalysis({
+      jobOfferId,
+      processingRunId: run!.id
+    });
+
+    expect(first.id).toBe(second.id);
+    expect(first.requirementExtractionStatus).toBe("PENDING");
+    expect(second.requirementExtractionStatus).toBe("PENDING");
+
+    const analyses = await connection.db
+      .select()
+      .from(jobAnalyses);
+
+    expect(analyses).toHaveLength(1);
+  });
+
+  it.each(["COMPLETED", "FAILED"] as const)(
+    "recupera un JobAnalysis existente en estado %s",
+    async (status) => {
+      const repository = new JobRepository(connection.db);
+      await service.accept(input);
+
+      const [run] = await connection.db.select().from(processingRuns);
+      expect(run).toBeDefined();
+
+      const jobOfferId = randomUUID();
+      const jobAnalysisId = randomUUID();
+
+      await connection.db.insert(jobOffers).values({
+        id: jobOfferId,
+        source: "linkedin",
+        sourceJobId: `analysis-${status.toLowerCase()}`,
+        normalizedUrl: `https://example.com/jobs/analysis-${status.toLowerCase()}`,
+        title: "Desarrollador Web",
+        company: "Example",
+        jobFamily: "WEB",
+        role: "WEB_DEVELOPER",
+        country: "España",
+        city: "Castellón de la Plana",
+        modality: "REMOTE",
+        distanceKm: null,
+        contract: "PERMANENT",
+        employmentType: "EMPLOYEE",
+        workingHours: "FULL_TIME"
+      });
+
+      await connection.db.insert(jobAnalyses).values({
+        id: jobAnalysisId,
+        jobOfferId,
+        processingRunId: run!.id,
+        version: 1,
+        matchingSummary: null,
+        requirementExtractionStatus: status,
+        createdAt: new Date()
+      });
+
+      const result = await repository.createPendingJobAnalysis({
+        jobOfferId,
+        processingRunId: run!.id
+      });
+
+      expect(result).toEqual({
+        id: jobAnalysisId,
+        requirementExtractionStatus: status,
+        createdAt: expect.any(Date)
+      });
+
+      const analyses = await connection.db
+        .select()
+        .from(jobAnalyses);
+
+      expect(analyses).toHaveLength(1);
+    }
+  );
 });

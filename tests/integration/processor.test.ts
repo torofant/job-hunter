@@ -1,13 +1,23 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and } from "drizzle-orm";
 
 import { JobRepository } from "../../src/modules/jobs/job.repository.js";
 import { JobService } from "../../src/modules/jobs/job.service.js";
-import { aiUsage, jobDetections, jobOffers, processingRuns } from "../../src/database/schema/index.js";
 import { Processor } from "../../src/modules/processing/processor.js";
 import { ProcessingRepository } from "../../src/modules/processing/processing.repository.js";
 import type { JobEnrichmentService } from "../../src/modules/jobs/job-enrichment.service.js";
 import { clearDatabase, createTestDatabase } from "../helpers/database.js";
+import type { UserProfileRepository } from "../../src/modules/jobs/user-profile.repository.js";
+import type { JobRequirementExtractionService } from "../../src/modules/jobs/requirement-extraction.service.js";
+import type { UserProfile } from "../../src/modules/jobs/user-profile.js";
+import {
+  aiUsage,
+  jobAnalyses,
+  jobDetections,
+  jobOffers,
+  processingRuns,
+  requirementMatches
+} from "../../src/database/schema/index.js";
 
 const input = {
   source: "linkedin",
@@ -41,11 +51,60 @@ describe("procesador interno", () => {
     })
   } as unknown as JobEnrichmentService;
 
+
+  const testUserProfile: UserProfile = {
+    id: "00000000-0000-4000-8000-000000000001",
+    targetRoles: [],
+    technologies: [],
+    experiences: [],
+    languages: [],
+    locationPreferences: {
+      remoteAllowed: true,
+      hybridAllowed: true,
+      onsiteAllowed: true,
+      hybridMaxCity: null,
+      onsiteMaxDistanceKm: null,
+      relocationAllowed: false
+    },
+    employmentPreferences: {
+      fullTimeAllowed: true,
+      partTimeAllowed: true,
+      permanentAllowed: true,
+      temporaryAllowed: false,
+      internshipAllowed: false,
+      scholarshipAllowed: false,
+      traineeAllowed: false,
+      freelanceAllowed: true,
+      selfEmployedAllowed: true
+    },
+    salaryPreferences: {
+      currency: "EUR",
+      minimum: 20000,
+      desired: 24000
+    }
+  };
+
+  const userProfileRepository = {
+    getProfile: vi.fn().mockResolvedValue(testUserProfile)
+  } as unknown as UserProfileRepository;
+
+  const requirementExtractionService = {
+    extract: vi.fn().mockResolvedValue({
+      result: { requirements: [] },
+      inputTokens: 100,
+      outputTokens: 20,
+      model: "claude-haiku-4-5",
+      promptVersion: "1.0.0"
+    })
+  } as unknown as JobRequirementExtractionService;
+
   const processor = new Processor(
     runs,
     jobs,
     jobEnrichmentService,
-    50
+    50,
+    userProfileRepository,
+    requirementExtractionService
   );
 
   beforeEach(async () => {
@@ -202,7 +261,12 @@ describe("procesador interno", () => {
     const usage = await connection.db
       .select()
       .from(aiUsage)
-      .where(eq(aiUsage.detectionId, detectionId));
+      .where(
+        and(
+          eq(aiUsage.detectionId, detectionId),
+          eq(aiUsage.purpose, "ENRICHMENT")
+        )
+      );
 
     expect(usage).toHaveLength(1);
 
@@ -343,7 +407,12 @@ describe("procesador interno", () => {
     const usage = await connection.db
       .select()
       .from(aiUsage)
-      .where(eq(aiUsage.detectionId, detectionId));
+      .where(
+        and(
+          eq(aiUsage.detectionId, detectionId),
+          eq(aiUsage.purpose, "ENRICHMENT")
+        )
+      );
 
     expect(usage).toHaveLength(0);
 
@@ -391,5 +460,208 @@ describe("procesador interno", () => {
         attempt: 1
       })
     );
+  });
+
+  it("marca el análisis como FAILED cuando falla la extracción de requisitos", async () => {
+    const { detectionId } = await service.accept(input);
+
+    vi.mocked(requirementExtractionService.extract).mockRejectedValueOnce(
+      new Error("Error al extraer requisitos")
+    );
+
+    await processor.processAvailable();
+
+    const analyses = await connection.db
+      .select()
+      .from(jobAnalyses);
+
+    expect(analyses).toHaveLength(1);
+    expect(analyses[0]?.requirementExtractionStatus).toBe("FAILED");
+    expect(analyses[0]?.matchingSummary).toBeNull();
+
+    const matches = await connection.db
+      .select()
+      .from(requirementMatches);
+
+    expect(matches).toHaveLength(0);
+
+    const extractionUsage = await connection.db
+      .select()
+      .from(aiUsage)
+      .where(
+        and(
+          eq(aiUsage.detectionId, detectionId),
+          eq(aiUsage.purpose, "REQUIREMENT_EXTRACTION")
+        )
+      );
+
+    expect(extractionUsage).toHaveLength(0);
+
+    const [run] = await connection.db
+      .select()
+      .from(processingRuns);
+
+    expect(run).toEqual(
+      expect.objectContaining({
+        status: "COMPLETED",
+        attempt: 1
+      })
+    );
+  });
+
+  it("extrae requisitos, ejecuta matching y completa el análisis", async () => {
+    const { detectionId } = await service.accept(input);
+
+    vi.mocked(requirementExtractionService.extract).mockResolvedValueOnce({
+      result: {
+        requirements: [
+          {
+            category: "technology",
+            type: "single",
+            importance: "required",
+            data: { technology: "JavaScript" }
+          }
+        ]
+      },
+      inputTokens: 120,
+      outputTokens: 30,
+      model: "claude-haiku-4-5",
+      promptVersion: "1.0.0"
+    });
+
+    vi.mocked(userProfileRepository.getProfile).mockResolvedValueOnce({
+      ...testUserProfile,
+      technologies: [{ name: "Java", level: null, context: null }]
+    });
+
+    await processor.processAvailable();
+
+    const usage = await connection.db
+      .select()
+      .from(aiUsage)
+      .where(
+        and(
+          eq(aiUsage.detectionId, detectionId),
+          eq(aiUsage.purpose, "REQUIREMENT_EXTRACTION")
+        )
+      );
+
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toEqual(
+      expect.objectContaining({
+        detectionId,
+        provider: "anthropic",
+        model: "claude-haiku-4-5",
+        purpose: "REQUIREMENT_EXTRACTION",
+        promptVersion: "1.0.0",
+        inputTokens: 120,
+        outputTokens: 30
+      })
+    );
+
+    const analyses = await connection.db
+      .select()
+      .from(jobAnalyses);
+
+    expect(analyses).toHaveLength(1);
+    expect(analyses[0]?.requirementExtractionStatus).toBe("COMPLETED");
+
+    const matches = await connection.db
+      .select()
+      .from(requirementMatches);
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.result).toBe("MISSING");
+
+    const [run] = await connection.db.select().from(processingRuns);
+    expect(run?.status).toBe("COMPLETED");
+  });
+
+  it("no repite la extracción cuando recupera una ejecución con el análisis COMPLETED", async () => {
+    const { detectionId } = await service.accept(input);
+
+    await processor.processAvailable();
+
+    const [completedRun] = await connection.db
+      .select()
+      .from(processingRuns);
+
+    const [completedAnalysis] = await connection.db
+      .select()
+      .from(jobAnalyses);
+
+    expect(completedRun?.status).toBe("COMPLETED");
+    expect(completedAnalysis?.requirementExtractionStatus).toBe("COMPLETED");
+
+    const extractionCallsBeforeRecovery =
+      vi.mocked(requirementExtractionService.extract).mock.calls.length;
+
+    await connection.db
+      .update(processingRuns)
+      .set({
+        status: "PROCESSING",
+        startedAt: new Date(Date.now() - 60_000)
+      })
+      .where(eq(processingRuns.id, completedRun!.id));
+
+    await processor.processAvailable();
+
+    const [recoveredRun] = await connection.db
+      .select()
+      .from(processingRuns);
+
+    const analyses = await connection.db
+      .select()
+      .from(jobAnalyses);
+
+    const extractionUsage = await connection.db
+      .select()
+      .from(aiUsage)
+      .where(
+        and(
+          eq(aiUsage.detectionId, detectionId),
+          eq(aiUsage.purpose, "REQUIREMENT_EXTRACTION")
+        )
+      );
+
+    expect(recoveredRun?.status).toBe("COMPLETED");
+    expect(analyses).toHaveLength(1);
+    expect(
+      vi.mocked(requirementExtractionService.extract).mock.calls
+    ).toHaveLength(extractionCallsBeforeRecovery);
+    expect(extractionUsage).toHaveLength(1);
+  });
+
+  it("reintenta el procesamiento cuando falla la persistencia del análisis", async () => {
+    await service.accept(input);
+
+    const persistSpy = vi
+      .spyOn(jobs, "persistCompletedJobAnalysis")
+      .mockRejectedValueOnce(new Error("Error de persistencia"));
+
+    await processor.processAvailable();
+
+    const [run] = await connection.db
+      .select()
+      .from(processingRuns);
+
+    const [analysis] = await connection.db
+      .select()
+      .from(jobAnalyses);
+
+    expect(persistSpy).toHaveBeenCalledTimes(2);
+
+    expect(run).toEqual(
+      expect.objectContaining({
+        status: "COMPLETED",
+        attempt: 2,
+        lastError: null
+      })
+    );
+
+    expect(analysis?.requirementExtractionStatus).toBe("COMPLETED");
+    expect(analysis?.matchingSummary).not.toBeNull();
+
+    persistSpy.mockRestore();
   });
 });

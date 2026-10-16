@@ -36,6 +36,34 @@
       "when": 1790590772003,
       "tag": "0004_amused_felicia_hardy",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790927409195,
+      "tag": "0005_curly_strong_guy",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790927955154,
+      "tag": "0006_tranquil_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790928202279,
+      "tag": "0007_cool_franklin_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791972573463,
+      "tag": "0008_jittery_legion",
+      "breakpoints": true
     }
   ]
 }
