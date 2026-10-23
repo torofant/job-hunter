@@ -3,6 +3,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  real,
   timestamp,
   uuid
 } from "drizzle-orm/pg-core";
@@ -13,6 +14,11 @@ import { processingRuns } from "./processing-runs.js";
 export const requirementExtractionStatus = pgEnum(
   "requirement_extraction_status",
   ["PENDING", "COMPLETED", "FAILED"]
+);
+
+export const confidenceLevel = pgEnum(
+  "confidence_level",
+  ["HIGH", "MEDIUM", "LOW"]
 );
 
 export const jobAnalyses = pgTable("job_analyses", {
@@ -29,6 +35,16 @@ export const jobAnalyses = pgTable("job_analyses", {
   version: integer("version").notNull(),
 
   matchingSummary: jsonb("matching_summary"),
+
+  score: real("score"),
+
+  coverage: real("coverage"),
+
+  coverageBreakdown: jsonb("coverage_breakdown").$type<
+    Record<string, number | null>
+  >(),
+
+  confidenceLevel: confidenceLevel("confidence_level"),
 
   requirementExtractionStatus: requirementExtractionStatus(
     "requirement_extraction_status"

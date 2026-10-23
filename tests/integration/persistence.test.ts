@@ -465,7 +465,19 @@ describe("persistencia de la aceptación", () => {
       jobAnalysisId,
       requirements: [requirement],
       matches: [match],
-      matchingSummary
+      matchingSummary,
+      score: 85,
+      coverage: 90,
+      coverageBreakdown: {
+        job_type: 100,
+        technologies: 50,
+        experience: null,
+        location: 100,
+        employment_conditions: 100,
+        languages: null,
+        other_requirements: null
+      },
+      confidence: "MEDIUM"
     });
 
     const persistedRequirements = await connection.db
@@ -503,7 +515,20 @@ describe("persistencia de la aceptación", () => {
       id: jobAnalysisId,
       requirementExtractionStatus: "COMPLETED",
       matchingSummary
+    })
+
+    expect(persistedAnalysis?.score).toBe(85);
+    expect(persistedAnalysis?.coverage).toBe(90);
+    expect(persistedAnalysis?.coverageBreakdown).toEqual({
+      job_type: 100,
+      technologies: 50,
+      experience: null,
+      location: 100,
+      employment_conditions: 100,
+      languages: null,
+      other_requirements: null
     });
+    expect(persistedAnalysis?.confidenceLevel).toBe("MEDIUM");
   });
 
   it("reutiliza los IDs de requisitos activos cuando el conjunto no cambia", async () => {
@@ -576,7 +601,19 @@ describe("persistencia de la aceptación", () => {
       matches: [firstMatch],
       matchingSummary: buildMatchingSummary([
         { requirement, match: firstMatch }
-      ])
+      ]),
+      score: 85,
+      coverage: 90,
+      coverageBreakdown: {
+        job_type: 100,
+        technologies: 50,
+        experience: null,
+        location: 100,
+        employment_conditions: 100,
+        languages: null,
+        other_requirements: null
+      },
+      confidence: "MEDIUM"
     });
 
     // La segunda extracción trae el mismo requisito con otro ID.
@@ -596,8 +633,23 @@ describe("persistencia de la aceptación", () => {
       requirements: [newlyExtractedRequirement],
       matches: [secondMatch],
       matchingSummary: buildMatchingSummary([
-        { requirement: newlyExtractedRequirement, match: secondMatch }
-      ])
+        {
+          requirement: newlyExtractedRequirement,
+          match: secondMatch
+        }
+      ]),
+      score: 85,
+      coverage: 90,
+      coverageBreakdown: {
+        job_type: 100,
+        technologies: 50,
+        experience: null,
+        location: 100,
+        employment_conditions: 100,
+        languages: null,
+        other_requirements: null
+      },
+      confidence: "MEDIUM"
     });
 
     const persistedRequirements = await connection.db
@@ -690,7 +742,19 @@ describe("persistencia de la aceptación", () => {
       matches: [oldMatch],
       matchingSummary: buildMatchingSummary([
         { requirement: oldRequirement, match: oldMatch }
-      ])
+      ]),
+      score: 85,
+      coverage: 90,
+      coverageBreakdown: {
+        job_type: 100,
+        technologies: 50,
+        experience: null,
+        location: 100,
+        employment_conditions: 100,
+        languages: null,
+        other_requirements: null
+      },
+      confidence: "MEDIUM"
     });
 
     const newRequirement: Requirement = {
@@ -713,7 +777,19 @@ describe("persistencia de la aceptación", () => {
       matches: [newMatch],
       matchingSummary: buildMatchingSummary([
         { requirement: newRequirement, match: newMatch }
-      ])
+      ]),
+      score: 85,
+      coverage: 90,
+      coverageBreakdown: {
+        job_type: 100,
+        technologies: 50,
+        experience: null,
+        location: 100,
+        employment_conditions: 100,
+        languages: null,
+        other_requirements: null
+      },
+      confidence: "MEDIUM"
     });
 
     const persistedRequirements = await connection.db

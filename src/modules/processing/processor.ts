@@ -13,6 +13,12 @@ import { buildRequirementExtractionInput } from "../jobs/requirement-extraction-
 import { normalizeAndDeduplicateRequirements } from "../jobs/requirement.normalizer.js";
 import { matchRequirement } from "../jobs/requirement.matcher.js";
 import { buildMatchingSummary } from "../jobs/matching-summary.js";
+import { calculateGlobalCoverageScore } from "../jobs/coverage.js";
+import { evaluateCoverage } from "../jobs/coverage-evaluator.js";
+import { calculateConfidence } from "../jobs/confidence.js";
+import type { JobAnalysisResult } from "../jobs/job-analysis-result.js";
+import { buildScoringInputs } from "../jobs/scoring-inputs.js";
+import { calculateScoringResult } from "../jobs/scoring.js";
 
 const PROCESSOR_INTERVAL_MS = 1_000;
 
@@ -45,12 +51,11 @@ export class Processor {
     }
   }
 
-  async processAvailable(): Promise<void> {
-    if (this.running) {
-      return;
-    }
+  async processAvailable(): Promise<JobAnalysisResult[]> {
+    if (this.running) return [];
 
     this.running = true;
+    const results: JobAnalysisResult[] = [];
 
     try {
       await this.processingRepository.recoverAbandonedRuns(
@@ -60,15 +65,24 @@ export class Processor {
       let run = await this.processingRepository.claimNextRun();
 
       while (run) {
-        await this.processRun(run);
+        const result = await this.processRun(run);
+
+        if (result) {
+          results.push(result);
+        }
+
         run = await this.processingRepository.claimNextRun();
       }
+
+      return results;
     } finally {
       this.running = false;
     }
   }
 
-  private async processRun(run: ClaimedProcessingRun): Promise<void> {
+  private async processRun(
+    run: ClaimedProcessingRun
+  ): Promise<JobAnalysisResult | null> {
     try {
       const detection = await this.jobRepository.getDetectionForRun(run.id);
 
@@ -114,7 +128,7 @@ export class Processor {
 
       if (filterResult.status !== "ACCEPTED") {
         await this.processingRepository.completeRun(run.id);
-        return;
+        return null;
       }
 
       const analysis = await this.jobRepository.createPendingJobAnalysis({
@@ -122,13 +136,12 @@ export class Processor {
         processingRunId: run.id
       });
 
-      // No repetimos la extracción de un análisis que ya terminó.
+      // No repetimos la extracción si el análisis ya no está pendiente.
       if (analysis.requirementExtractionStatus !== "PENDING") {
         await this.processingRepository.completeRun(run.id);
-        return;
+        return null;
       }
 
-      // Comprobamos el perfil antes de consumir otra llamada a Claude.
       const userProfile = await this.userProfileRepository.getProfile();
 
       const extractionInput = buildRequirementExtractionInput(
@@ -143,19 +156,13 @@ export class Processor {
         extraction = await this.requirementExtractionService.extract(
           extractionInput
         );
-      } catch (error) {
-        // Un fallo de Claude no se convierte en requisitos inventados
-        // ni en un fallo de matching.
-        await this.jobRepository.markRequirementExtractionFailed(
-          analysis.id
-        );
-
+      } catch {
+        await this.jobRepository.markRequirementExtractionFailed(analysis.id);
         await this.processingRepository.completeRun(run.id);
-        return;
+        return null;
       }
 
-      // El registro de consumo queda fuera del catch de extracción:
-      // si falla la persistencia de AIUsage, el procesamiento se reintenta.
+      // Si falla el registro del consumo, el procesamiento se reintenta.
       await this.jobRepository.createAIUsage({
         detectionId: detection.detectionId,
         provider: "anthropic",
@@ -184,14 +191,68 @@ export class Processor {
         }))
       );
 
+      const scoringInputs = buildScoringInputs({
+        jobOffer,
+        userProfile,
+        requirements,
+        matches,
+        salaryMetadata: detection.rawInput.raw_metadata
+      });
+
+      const scoringResult = calculateScoringResult(scoringInputs);
+
+      const coverageBreakdown = evaluateCoverage({
+        jobFamily: jobOffer.jobFamily,
+        role: jobOffer.role,
+        country: jobOffer.country,
+        city: jobOffer.city,
+        modality: jobOffer.modality,
+        contract: jobOffer.contract,
+        employmentType: jobOffer.employmentType,
+        workingHours: jobOffer.workingHours,
+        extractionStatus: "COMPLETED",
+        requirements
+      });
+
+      const globalCoverageScore =
+        calculateGlobalCoverageScore(coverageBreakdown);
+
+      const confidence = calculateConfidence({
+        extractionStatus: "COMPLETED",
+        hasDeterministicUnreliabilitySignal: false
+      });
+
+      // La extracción está completada, por lo que confidence no es null.
+      if (confidence === null) {
+        throw new Error(
+          "La confianza no puede ser null para una extracción completada"
+        );
+      }
+
       await this.jobRepository.persistCompletedJobAnalysis({
         jobAnalysisId: analysis.id,
         requirements,
         matches,
-        matchingSummary
+        matchingSummary,
+        score: scoringResult.score,
+        coverage: globalCoverageScore,
+        coverageBreakdown,
+        confidence
       });
 
       await this.processingRepository.completeRun(run.id);
+
+      return {
+        jobOfferId: jobOffer.id,
+        jobAnalysisId: analysis.id,
+        requirements,
+        matches,
+        matchingSummary,
+        coverageBreakdown,
+        globalCoverageScore,
+        confidence,
+        scoringResult
+      };
     } catch (error) {
       console.error("Error completo al procesar la oferta:", error);
 
@@ -199,15 +260,18 @@ export class Processor {
         console.error("Causa original:", error.cause);
       }
 
-      const message = error instanceof Error
-        ? error.message
-        : "Error de procesamiento desconocido";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Error de procesamiento desconocido";
 
       await this.processingRepository.retryOrFailRun(
         run.id,
         run.attempt,
         message
       );
+
+      return null;
     }
   }
 

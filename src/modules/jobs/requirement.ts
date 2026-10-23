@@ -76,43 +76,52 @@ export const requirementSchema = z.union([
       options: z.array(languageItemSchema).min(2)
     })
   }),
+
   requirementBaseSchema.extend({
     category: z.literal("language"),
     type: z.literal("group"),
     data: z.object({
       components: z.array(languageItemSchema).min(2)
     })
+  }),
+
+  requirementBaseSchema.extend({
+    category: z.literal("other"),
+    type: z.literal("single"),
+    data: z.object({
+      description: z.string().min(1)
+    })
+  }),
+  requirementBaseSchema.extend({
+    category: z.literal("other"),
+    type: z.literal("alternative"),
+    data: z.object({
+      options: z.array(
+        z.object({
+          description: z.string().min(1)
+        })
+      ).min(2)
+    })
+  }),
+  requirementBaseSchema.extend({
+    category: z.literal("other"),
+    type: z.literal("group"),
+    data: z.object({
+      components: z.array(
+        z.object({
+          description: z.string().min(1)
+        })
+      ).min(2)
+    })
   })
 ]);
 
 export const requirementEntitySchema = z.union([
-  requirementSchema.options[0].extend({
-    id: z.string().uuid()
-  }),
-  requirementSchema.options[1].extend({
-    id: z.string().uuid()
-  }),
-  requirementSchema.options[2].extend({
-    id: z.string().uuid()
-  }),
-  requirementSchema.options[3].extend({
-    id: z.string().uuid()
-  }),
-  requirementSchema.options[4].extend({
-    id: z.string().uuid()
-  }),
-  requirementSchema.options[5].extend({
-    id: z.string().uuid()
-  }),
-  requirementSchema.options[6].extend({
-    id: z.string().uuid()
-  }),
-  requirementSchema.options[7].extend({
-    id: z.string().uuid()
-  }),
-  requirementSchema.options[8].extend({
-    id: z.string().uuid()
-  })
+  ...requirementSchema.options.map((schema) =>
+    schema.extend({
+      id: z.string().uuid()
+    })
+  )
 ]);
 
 export type Requirement = z.infer<typeof requirementEntitySchema>;

@@ -664,4 +664,34 @@ describe("procesador interno", () => {
 
     persistSpy.mockRestore();
   });
+
+  it("incluye el salario de raw_metadata en el scoring del análisis", async () => {
+    await service.accept({
+      ...input,
+      raw_metadata: {
+        salary: 25000,
+        salary_currency: "EUR",
+        salary_period: "annual"
+      }
+    });
+
+    const results = await processor.processAvailable();
+
+    const [persistedAnalysis] = await connection.db
+      .select()
+      .from(jobAnalyses);
+
+    expect(persistedAnalysis).toEqual(
+      expect.objectContaining({
+        requirementExtractionStatus: "COMPLETED",
+        score: expect.any(Number),
+        coverage: expect.any(Number),
+        coverageBreakdown: expect.any(Object),
+        confidenceLevel: "MEDIUM"
+      })
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.scoringResult.breakdown.employmentConditions).toBe(10);
+  });
 });

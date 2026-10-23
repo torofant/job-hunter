@@ -334,4 +334,70 @@ describe("matchRequirement", () => {
       "550e8400-e29b-41d4-a716-446655440001"
     );
   });
+
+  it("devuelve UNKNOWN para un requisito other de tipo single", () => {
+    const requirement = createRequirement({
+      category: "other",
+      type: "single",
+      importance: "required",
+      data: {
+        description: "carnet de conducir"
+      }
+    });
+
+    const result = matchRequirement(
+      requirement,
+      userProfileBase,
+      "2026-01-01"
+    );
+
+    expect(result.result).toBe("UNKNOWN");
+    expect(result.requirementId).toBe(requirement.id);
+  });
+
+  it("devuelve UNKNOWN para un requisito other de tipo alternative", () => {
+    const requirement = createRequirement({
+      category: "other",
+      type: "alternative",
+      importance: "required",
+      data: {
+        options: [
+          { description: "carnet de conducir" },
+          { description: "vehículo propio" }
+        ]
+      }
+    });
+
+    const result = matchRequirement(
+      requirement,
+      userProfileBase,
+      "2026-01-01"
+    );
+
+    expect(result.result).toBe("UNKNOWN");
+    expect(result.requirementId).toBe(requirement.id);
+  });
+
+  it("devuelve UNKNOWN para un requisito other de tipo group", () => {
+    const requirement = createRequirement({
+      category: "other",
+      type: "group",
+      importance: "required",
+      data: {
+        components: [
+          { description: "carnet de conducir" },
+          { description: "disponibilidad para viajar" }
+        ]
+      }
+    });
+
+    const result = matchRequirement(
+      requirement,
+      userProfileBase,
+      "2026-01-01"
+    );
+
+    expect(result.result).toBe("UNKNOWN");
+    expect(result.requirementId).toBe(requirement.id);
+  });
 });

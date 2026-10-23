@@ -41,6 +41,7 @@ describe("normalizeJobOfferWithAI", () => {
       enrichmentService
     );
 
+    expect(result.enrichmentStatus).toBe("COMPLETED");
     expect(result.candidate.jobFamily).toBe("WEB");
     expect(result.candidate.role).toBe("FULL_STACK_DEVELOPER");
     expect(result.candidate.country).toBe("Spain");
@@ -68,6 +69,7 @@ describe("normalizeJobOfferWithAI", () => {
       enrichmentService
     );
 
+    expect(result.enrichmentStatus).toBe("FALLBACK");
     expect(result.candidate.title).toBe(input.title);
     expect(result.candidate.company).toBe(input.company);
     expect(result.candidate.source).toBe(input.source);

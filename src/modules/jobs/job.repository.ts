@@ -20,6 +20,9 @@ import { buildMatchingSummary } from "./matching-summary.js";
 import { haveSameRequirementSet } from "./requirement.normalizer.js";
 import { requirements } from "../../database/schema/index.js";
 import { requirementMatches } from "../../database/schema/index.js";
+import type { ConfidenceLevel } from "./confidence.js";
+import type { CoverageBreakdown } from "./coverage.js";
+import type { ScoringResult } from "./scoring.js";
 
 type JobOfferInsert = InferInsertModel<typeof jobOffers>;
 type JobOffer = InferSelectModel<typeof jobOffers>;
@@ -156,7 +159,7 @@ export class JobRepository {
         id: existingAnalysis.id,
         requirementExtractionStatus:
           existingAnalysis.requirementExtractionStatus,
-          createdAt: existingAnalysis.createdAt
+        createdAt: existingAnalysis.createdAt
       };
     }
 
@@ -185,11 +188,16 @@ export class JobRepository {
     requirements: Requirement[];
     matches: RequirementMatch[];
     matchingSummary: ReturnType<typeof buildMatchingSummary>;
+    score: number | null;
+    coverage: number | null;
+    coverageBreakdown: CoverageBreakdown;
+    confidence: ConfidenceLevel;
   }): Promise<void> {
     const categoryToDb = {
       technology: "TECHNOLOGY",
       experience: "EXPERIENCE",
-      language: "LANGUAGE"
+      language: "LANGUAGE",
+      other: "OTHER"
     } as const;
 
     const typeToDb = {
@@ -365,6 +373,10 @@ export class JobRepository {
         .update(jobAnalyses)
         .set({
           matchingSummary: input.matchingSummary,
+          score: input.score,
+          coverage: input.coverage,
+          coverageBreakdown: input.coverageBreakdown,
+          confidenceLevel: input.confidence,
           requirementExtractionStatus: "COMPLETED"
         })
         .where(eq(jobAnalyses.id, input.jobAnalysisId));

@@ -20,6 +20,7 @@ export function normalizeUrl(url: string): string {
 
 export type NormalizedJobOfferResult = {
   candidate: JobOfferCandidate;
+  enrichmentStatus: "COMPLETED" | "FALLBACK";
   aiUsage: {
     provider: "anthropic";
     model: string;
@@ -48,6 +49,7 @@ export function normalizeJobOffer(input: RawJobInput): JobOfferCandidate {
   };
 }
 
+
 export async function normalizeJobOfferWithAI(
   input: RawJobInput,
   enrichmentService: JobEnrichmentService
@@ -60,6 +62,7 @@ export async function normalizeJobOfferWithAI(
 
     return {
       candidate: mergeJobEnrichment(candidate, result.enrichment),
+      enrichmentStatus: "COMPLETED",
       aiUsage: {
         provider: "anthropic",
         model: result.model,
@@ -70,6 +73,7 @@ export async function normalizeJobOfferWithAI(
   } catch {
     return {
       candidate,
+      enrichmentStatus: "FALLBACK",
       aiUsage: null
     };
   }

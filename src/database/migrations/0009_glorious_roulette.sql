@@ -1,0 +1,1 @@
+ALTER TYPE "public"."requirement_category" ADD VALUE 'OTHER';

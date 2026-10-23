@@ -11,7 +11,8 @@ import { jobOffers } from "./job-offers.js";
 export const requirementCategory = pgEnum("requirement_category", [
   "TECHNOLOGY",
   "EXPERIENCE",
-  "LANGUAGE"
+  "LANGUAGE",
+  "OTHER"
 ]);
 
 export const requirementType = pgEnum("requirement_type", [

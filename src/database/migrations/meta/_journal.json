@@ -64,6 +64,20 @@
       "when": 1791972573463,
       "tag": "0008_jittery_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792402099329,
+      "tag": "0009_glorious_roulette",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792666119332,
+      "tag": "0010_magical_living_lightning",
+      "breakpoints": true
     }
   ]
 }

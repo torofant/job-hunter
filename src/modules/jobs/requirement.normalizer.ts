@@ -201,6 +201,45 @@ function normalizeLanguageRequirement(
   };
 }
 
+function normalizeOtherRequirement(
+  requirement: ExtractedRequirement & {
+    category: "other";
+  }
+): NormalizedRequirement {
+  if (requirement.type === "single") {
+    return {
+      ...requirement,
+      data: {
+        description: normalizeText(requirement.data.description)
+      }
+    };
+  }
+
+  if (requirement.type === "alternative") {
+    return {
+      ...requirement,
+      data: {
+        options: requirement.data.options
+          .map((item) => ({
+            description: normalizeText(item.description)
+          }))
+          .sort((a, b) => a.description.localeCompare(b.description))
+      }
+    };
+  }
+
+  return {
+    ...requirement,
+    data: {
+      components: requirement.data.components
+        .map((item) => ({
+          description: normalizeText(item.description)
+        }))
+        .sort((a, b) => a.description.localeCompare(b.description))
+    }
+  };
+}
+
 export function normalizeRequirement(
   requirement: ExtractedRequirement
 ): NormalizedRequirement {
@@ -212,8 +251,13 @@ export function normalizeRequirement(
     return normalizeExperienceRequirement(requirement);
   }
 
-  return normalizeLanguageRequirement(requirement);
+  if (requirement.category === "language") {
+    return normalizeLanguageRequirement(requirement);
+  }
+
+  return normalizeOtherRequirement(requirement);
 }
+
 
 function requirementIdentity(requirement: NormalizedRequirement): string {
   return JSON.stringify({

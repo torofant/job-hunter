@@ -83,12 +83,46 @@ export const extractedRequirementSchema = z.union([
       options: z.array(languageItemSchema).min(2)
     })
   }),
+
   z.object({
     category: z.literal("language"),
     type: z.literal("group"),
     importance: requirementImportanceSchema,
     data: z.object({
       components: z.array(languageItemSchema).min(2)
+    })
+  }),
+
+  z.object({
+    category: z.literal("other"),
+    type: z.literal("single"),
+    importance: requirementImportanceSchema,
+    data: z.object({
+      description: z.string().min(1)
+    })
+  }),
+  z.object({
+    category: z.literal("other"),
+    type: z.literal("alternative"),
+    importance: requirementImportanceSchema,
+    data: z.object({
+      options: z.array(
+        z.object({
+          description: z.string().min(1)
+        })
+      ).min(2)
+    })
+  }),
+  z.object({
+    category: z.literal("other"),
+    type: z.literal("group"),
+    importance: requirementImportanceSchema,
+    data: z.object({
+      components: z.array(
+        z.object({
+          description: z.string().min(1)
+        })
+      ).min(2)
     })
   })
 ]);

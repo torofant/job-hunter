@@ -108,7 +108,7 @@ describe("requirementExtractionResultSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rechaza requisitos other", () => {
+  it("acepta requisitos other", () => {
     const result = requirementExtractionResultSchema.safeParse({
       requirements: [
         {
@@ -122,7 +122,7 @@ describe("requirementExtractionResultSchema", () => {
       ]
     });
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it("rechaza lenguaje sin nivel CEFR", () => {
