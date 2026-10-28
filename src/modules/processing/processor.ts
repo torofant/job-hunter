@@ -19,12 +19,18 @@ import { calculateConfidence } from "../jobs/confidence.js";
 import type { JobAnalysisResult } from "../jobs/job-analysis-result.js";
 import { buildScoringInputs } from "../jobs/scoring-inputs.js";
 import { calculateScoringResult } from "../jobs/scoring.js";
+import {
+  buildNotificationMessage,
+  formatSalaryMetadata
+} from "../notifications/notification-message.js";
 
 const PROCESSOR_INTERVAL_MS = 1_000;
 
 export class Processor {
   private timer: NodeJS.Timeout | undefined;
   private running = false;
+  private activeRun: Promise<void> | undefined;
+  private started = false;
 
   constructor(
     private readonly processingRepository: ProcessingRepository,
@@ -37,6 +43,9 @@ export class Processor {
   ) { }
 
   start(): void {
+    if (this.started) return;
+
+    this.started = true;
     this.runSafely();
 
     this.timer = setInterval(() => {
@@ -44,11 +53,34 @@ export class Processor {
     }, PROCESSOR_INTERVAL_MS);
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
+    this.started = false;
+
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
     }
+
+    await this.activeRun;
+  }
+
+  private runSafely(): void {
+    if (this.activeRun) return;
+
+    const run = this.processAvailable()
+      .then(
+        () => undefined,
+        (error: unknown) => {
+          this.reportError(error);
+        }
+      )
+      .finally(() => {
+        if (this.activeRun === run) {
+          this.activeRun = undefined;
+        }
+      });
+
+    this.activeRun = run;
   }
 
   async processAvailable(): Promise<JobAnalysisResult[]> {
@@ -229,6 +261,27 @@ export class Processor {
         );
       }
 
+      const notificationResult = buildNotificationMessage({
+        title: jobOffer.title,
+        company: jobOffer.company,
+        city: jobOffer.city,
+        country: jobOffer.country,
+        modality: jobOffer.modality,
+        salary: formatSalaryMetadata(detection.rawInput.raw_metadata),
+        score: scoringResult.score,
+        category: scoringResult.category,
+        coverage: globalCoverageScore,
+        url: detection.rawInput.url
+      });
+
+      if (!notificationResult.ok) {
+        console.warn(
+          "Notificación omitida:",
+          notificationResult.reason,
+          jobOffer.id
+        );
+      }
+
       await this.jobRepository.persistCompletedJobAnalysis({
         jobAnalysisId: analysis.id,
         requirements,
@@ -237,7 +290,13 @@ export class Processor {
         score: scoringResult.score,
         coverage: globalCoverageScore,
         coverageBreakdown,
-        confidence
+        confidence,
+        notification: notificationResult.ok
+          ? {
+            message: notificationResult.message,
+            detectedAt: detection.rawInput.detected_at
+          }
+          : null
       });
 
       await this.processingRepository.completeRun(run.id);
@@ -273,11 +332,5 @@ export class Processor {
 
       return null;
     }
-  }
-
-  private runSafely(): void {
-    void this.processAvailable().catch((error: unknown) => {
-      this.reportError(error);
-    });
   }
 }

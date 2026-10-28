@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import {
   jobAnalyses,
   jobOffers,
+  notifications,
   processingRuns,
   rawJobInputs,
   requirements,
@@ -477,7 +478,11 @@ describe("persistencia de la aceptación", () => {
         languages: null,
         other_requirements: null
       },
-      confidence: "MEDIUM"
+      confidence: "MEDIUM",
+      notification: {
+        message: "Backend Developer — Example\nScore: 85/100\nhttps://example.com/jobs/job-analysis-1",
+        detectedAt: new Date("2026-09-24T10:00:00Z")
+      }
     });
 
     const persistedRequirements = await connection.db
@@ -529,6 +534,19 @@ describe("persistencia de la aceptación", () => {
       other_requirements: null
     });
     expect(persistedAnalysis?.confidenceLevel).toBe("MEDIUM");
+
+    const persistedNotifications = await connection.db
+      .select()
+      .from(notifications);
+
+    expect(persistedNotifications).toHaveLength(1);
+    expect(persistedNotifications[0]).toMatchObject({
+      jobOfferId,
+      jobAnalysisId,
+      status: "PENDING",
+      message: expect.stringContaining("Backend Developer"),
+      detectedAt: new Date("2026-09-24T10:00:00Z")
+    });
   });
 
   it("reutiliza los IDs de requisitos activos cuando el conjunto no cambia", async () => {
@@ -613,7 +631,11 @@ describe("persistencia de la aceptación", () => {
         languages: null,
         other_requirements: null
       },
-      confidence: "MEDIUM"
+      confidence: "MEDIUM",
+      notification: {
+        message: "Backend Developer\nScore: 85/100\nhttps://example.com/jobs/reuse-requirement",
+        detectedAt: new Date("2026-09-24T10:00:00Z")
+      }
     });
 
     // La segunda extracción trae el mismo requisito con otro ID.
@@ -649,7 +671,11 @@ describe("persistencia de la aceptación", () => {
         languages: null,
         other_requirements: null
       },
-      confidence: "MEDIUM"
+      confidence: "MEDIUM",
+      notification: {
+        message: "Backend Developer\nScore: 85/100\nhttps://example.com/jobs/reuse-requirement",
+        detectedAt: new Date("2026-09-24T10:00:00Z")
+      }
     });
 
     const persistedRequirements = await connection.db
@@ -671,6 +697,16 @@ describe("persistencia de la aceptación", () => {
       requirementId,
       requirementId
     ]);
+
+    const persistedNotifications = await connection.db
+      .select()
+      .from(notifications);
+
+    expect(persistedNotifications).toHaveLength(1);
+    expect(persistedNotifications[0]).toMatchObject({
+      jobOfferId,
+      status: "PENDING"
+    });
   });
 
   it("desactiva los requisitos anteriores cuando cambia el conjunto", async () => {

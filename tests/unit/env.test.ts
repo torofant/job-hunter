@@ -13,6 +13,9 @@ describe("loadEnvironment", () => {
 
     expect(environment.PORT).toBe(3000);
     expect(environment.NODE_ENV).toBe("development");
+    expect(environment.TELEGRAM_BATCH_WINDOW_MS).toBe(10_800_000);
+    expect(environment.TELEGRAM_BOT_TOKEN).toBeUndefined();
+    expect(environment.TELEGRAM_CHAT_ID).toBeUndefined();
   });
 
   it("rechaza una clave de API vacía", () => {

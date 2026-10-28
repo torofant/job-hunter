@@ -13,3 +13,4 @@ export * from "./language-profiles.js";
 export * from "./requirements.js";
 export * from "./job-analyses.js";
 export * from "./requirement-matches.js";
+export * from "./notifications.js";

@@ -12,6 +12,9 @@ import { ProcessingRepository } from "./modules/processing/processing.repository
 import { JobEnrichmentService } from "./modules/jobs/job-enrichment.service.js";
 import { UserProfileRepository } from "./modules/jobs/user-profile.repository.js";
 import { JobRequirementExtractionService } from "./modules/jobs/requirement-extraction.service.js";
+import { NotificationDispatcher } from "./modules/notifications/notification-dispatcher.js";
+import { NotificationRepository } from "./modules/notifications/notification.repository.js";
+import { TelegramClient } from "./modules/notifications/telegram.client.js";
 
 type AppDependencies = {
   jobEnrichmentService?: JobEnrichmentService;
@@ -49,6 +52,29 @@ export function createApp(
       app.log.error(error, "Error en el procesador interno")
   );
 
+  const notificationRepository = new NotificationRepository(database.db);
+
+  const telegramClient = new TelegramClient({
+    botToken: environment.TELEGRAM_BOT_TOKEN,
+    chatId: environment.TELEGRAM_CHAT_ID
+  });
+
+  const notificationDispatcher = telegramClient.isConfigured
+    ? new NotificationDispatcher(
+      notificationRepository,
+      telegramClient,
+      environment.TELEGRAM_BATCH_WINDOW_MS,
+      (error: unknown) =>
+        app.log.error(error, "Error en el despachador de notificaciones")
+    )
+    : undefined;
+
+  if (!telegramClient.isConfigured) {
+    app.log.warn(
+      "Telegram no está configurado; el envío de notificaciones permanece desactivado"
+    );
+  }
+
   const jobService = new JobService(jobRepository);
 
   app.addHook("preHandler", createAuthentication(environment.API_KEY));
@@ -72,11 +98,22 @@ export function createApp(
 
   app.addHook("onReady", async () => {
     processor.start();
+
+    if (notificationDispatcher) {
+      await notificationDispatcher.start();
+    } else {
+      await notificationRepository.markAbandonedSendingUnknown();
+    }
   });
 
   app.addHook("onClose", async () => {
-    processor.stop();
-    await database.close();
+    await processor.stop();
+
+    try {
+      await notificationDispatcher?.stop();
+    } finally {
+      await database.close();
+    }
   });
 
   return app;

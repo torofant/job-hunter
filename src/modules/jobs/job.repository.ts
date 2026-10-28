@@ -7,6 +7,7 @@ import {
   jobAnalyses,
   jobDetections,
   jobOffers,
+  notifications,
   processingRuns,
   rawJobInputs
 } from "../../database/schema/index.js";
@@ -192,6 +193,7 @@ export class JobRepository {
     coverage: number | null;
     coverageBreakdown: CoverageBreakdown;
     confidence: ConfidenceLevel;
+    notification?: { message: string; detectedAt: Date } | null;
   }): Promise<void> {
     const categoryToDb = {
       technology: "TECHNOLOGY",
@@ -380,6 +382,23 @@ export class JobRepository {
           requirementExtractionStatus: "COMPLETED"
         })
         .where(eq(jobAnalyses.id, input.jobAnalysisId));
+
+      if (input.notification) {
+        await transaction
+          .insert(notifications)
+          .values({
+            id: randomUUID(),
+            jobOfferId: analysis.jobOfferId,
+            jobAnalysisId: input.jobAnalysisId,
+            status: "PENDING",
+            message: input.notification.message,
+            detectedAt: input.notification.detectedAt,
+            createdAt: new Date()
+          })
+          .onConflictDoNothing({
+            target: notifications.jobOfferId
+          });
+      }
     });
   }
 
