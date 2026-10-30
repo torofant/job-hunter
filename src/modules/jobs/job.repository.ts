@@ -24,42 +24,186 @@ import { requirementMatches } from "../../database/schema/index.js";
 import type { ConfidenceLevel } from "./confidence.js";
 import type { CoverageBreakdown } from "./coverage.js";
 import type { ScoringResult } from "./scoring.js";
+import { createHash } from "node:crypto";
+import { idempotencyKeys } from "../../database/schema/index.js";
 
 type JobOfferInsert = InferInsertModel<typeof jobOffers>;
 type JobOffer = InferSelectModel<typeof jobOffers>;
 
+function canonicalize(value: unknown): unknown {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
+  }
+
+  if (value !== null && typeof value === "object") {
+    const sortedEntries = Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, item]) => [key, canonicalize(item)]);
+
+    return Object.fromEntries(sortedEntries);
+  }
+
+  return value;
+}
+
+function hashRawJobInput(input: RawJobInput): string {
+  const {
+    raw_metadata,
+    detected_at,
+    ...remainingInput
+  } = input;
+
+  const canonicalInput = {
+    ...remainingInput,
+    detected_at: new Date(detected_at).toISOString(),
+    ...(raw_metadata == null ? {} : { raw_metadata })
+  };
+
+  const canonicalJson = JSON.stringify(canonicalize(canonicalInput));
+
+  return createHash("sha256")
+    .update(canonicalJson)
+    .digest("hex");
+}
+
+export class IdempotencyKeyConflictError extends Error {
+  constructor() {
+    super("Idempotency-Key reutilizada con contenido diferente");
+    this.name = "IdempotencyKeyConflictError";
+  }
+}
+
+
+function isIdempotencyKeyUniqueViolation(
+  error: unknown
+): boolean {
+  let current: unknown = error;
+
+  while (typeof current === "object" && current !== null) {
+    if (
+      "code" in current &&
+      current.code === "23505" &&
+      "constraint" in current &&
+      current.constraint === "idempotency_keys_pkey"
+    ) {
+      return true;
+    }
+
+    if (!("cause" in current)) {
+      return false;
+    }
+
+    current = current.cause;
+  }
+
+  return false;
+}
+
 export class JobRepository {
   constructor(private readonly db: Database) { }
 
-  async createAcceptedJob(input: RawJobInput, ids: { rawInputId: string; processingRunId: string; detectionId: string }) {
-    await this.db.transaction(async (transaction) => {
-      await transaction.insert(rawJobInputs).values({
-        id: ids.rawInputId,
-        source: input.source,
-        sourceJobId: input.source_job_id,
-        title: input.title,
-        company: input.company,
-        url: input.url,
-        description: input.description,
-        location: input.location,
-        detectedAt: input.detected_at,
-        rawMetadata: input.raw_metadata
-      });
+  async createAcceptedJob(
+    input: RawJobInput,
+    ids: {
+      rawInputId: string;
+      processingRunId: string;
+      detectionId: string;
+    },
+    idempotencyKey: string
+  ): Promise<{ detectionId: string; created: boolean }> {
+    const requestHash = hashRawJobInput(input);
 
-      await transaction.insert(processingRuns).values({
-        id: ids.processingRunId,
-        status: "PENDING",
-        attempt: 0
-      });
+    try {
+      return await this.db.transaction(async (transaction) => {
+        const [existingKey] = await transaction
+          .select()
+          .from(idempotencyKeys)
+          .where(eq(idempotencyKeys.key, idempotencyKey))
+          .limit(1);
 
-      await transaction.insert(jobDetections).values({
-        id: ids.detectionId,
-        rawInputId: ids.rawInputId,
-        processingRunId: ids.processingRunId,
-        detectedAt: new Date()
+        if (existingKey) {
+          if (existingKey.requestHash !== requestHash) {
+            throw new IdempotencyKeyConflictError();
+          }
+
+          return {
+            detectionId: existingKey.detectionId,
+            created: false
+          };
+        }
+
+        await transaction.insert(rawJobInputs).values({
+          id: ids.rawInputId,
+          source: input.source,
+          sourceJobId: input.source_job_id,
+          title: input.title,
+          company: input.company,
+          url: input.url,
+          description: input.description,
+          location: input.location,
+          detectedAt: input.detected_at,
+          rawMetadata: input.raw_metadata
+        });
+
+        await transaction.insert(processingRuns).values({
+          id: ids.processingRunId,
+          status: "PENDING",
+          attempt: 0
+        });
+
+        await transaction.insert(jobDetections).values({
+          id: ids.detectionId,
+          rawInputId: ids.rawInputId,
+          processingRunId: ids.processingRunId,
+          detectedAt: new Date()
+        });
+
+        await transaction.insert(idempotencyKeys).values({
+          key: idempotencyKey,
+          requestHash,
+          detectionId: ids.detectionId,
+          createdAt: new Date()
+        });
+
+        return {
+          detectionId: ids.detectionId,
+          created: true
+        };
       });
-    });
+    } catch (error) {
+      if (
+        error instanceof IdempotencyKeyConflictError ||
+        !isIdempotencyKeyUniqueViolation(error)
+      ) {
+        throw error;
+      }
+
+      const [existingKey] = await this.db
+        .select()
+        .from(idempotencyKeys)
+        .where(eq(idempotencyKeys.key, idempotencyKey))
+        .limit(1);
+
+      if (!existingKey) {
+        throw error;
+      }
+
+      if (existingKey.requestHash !== requestHash) {
+        throw new IdempotencyKeyConflictError();
+      }
+
+      return {
+        detectionId: existingKey.detectionId,
+        created: false
+      };
+    }
   }
+
 
   async findOrCreateJobOffer(
     candidate: JobOfferInsert

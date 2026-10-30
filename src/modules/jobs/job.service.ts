@@ -4,17 +4,18 @@ import type { RawJobInput } from "../../api/schemas/raw-job-input.schema.js";
 import { JobRepository } from "./job.repository.js";
 
 export class JobService {
-  constructor(private readonly repository: JobRepository) {}
+  constructor(private readonly repository: JobRepository) { }
 
-  async accept(input: RawJobInput): Promise<{ detectionId: string }> {
+  async accept(
+    input: RawJobInput,
+    idempotencyKey: string
+  ): Promise<{ detectionId: string; created: boolean }> {
     const ids = {
       rawInputId: randomUUID(),
       processingRunId: randomUUID(),
       detectionId: randomUUID()
     };
 
-    await this.repository.createAcceptedJob(input, ids);
-
-    return { detectionId: ids.detectionId };
+    return this.repository.createAcceptedJob(input, ids, idempotencyKey);
   }
 }

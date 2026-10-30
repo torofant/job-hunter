@@ -43,7 +43,10 @@ describe("persistencia de la aceptación", () => {
   });
 
   it("crea RawJobInput, ProcessingRun y JobDetection", async () => {
-    const { detectionId } = await service.accept(input);
+    const { detectionId } = await service.accept(
+      input,
+      "persistence-create-001"
+    );
     const detections = await connection.db.execute<{ count: string }>(sql`SELECT count(*) FROM job_detections`);
     const rawInputs = await connection.db.select().from(rawJobInputs);
     const runs = await connection.db.select().from(processingRuns);
@@ -57,7 +60,10 @@ describe("persistencia de la aceptación", () => {
   });
 
   it("revierte la creación completa si falla una inserción", async () => {
-    const existing = await service.accept(input);
+    const existing = await service.accept(
+      input,
+      "persistence-rollback-001"
+    );
     const [existingRun] = await connection.db.select().from(processingRuns);
 
     await expect(
@@ -65,7 +71,7 @@ describe("persistencia de la aceptación", () => {
         rawInputId: "00000000-0000-0000-0000-000000000010",
         processingRunId: existingRun.id,
         detectionId: "00000000-0000-0000-0000-000000000011"
-      })
+      }, "persistence-rollback-conflict-001")
     ).rejects.toThrow();
 
     const rawInputs = await connection.db.select().from(rawJobInputs);
@@ -357,7 +363,10 @@ describe("persistencia de la aceptación", () => {
   it("persiste el uso de IA asociado a una detección", async () => {
     const repository = new JobRepository(connection.db);
 
-    const { detectionId } = await service.accept(input);
+    const { detectionId } = await service.accept(
+      input,
+      "persistence-create-001"
+    );
 
     const result = await repository.createAIUsage({
       detectionId,
@@ -385,7 +394,10 @@ describe("persistencia de la aceptación", () => {
   it("recupera una detección y su RawJobInput por processingRunId", async () => {
     const repository = new JobRepository(connection.db);
 
-    const { detectionId } = await service.accept(input);
+    const { detectionId } = await service.accept(
+      input,
+      "persistence-create-001"
+    );
 
     const runs = await connection.db.select().from(processingRuns);
     const run = runs[0];
@@ -410,7 +422,7 @@ describe("persistencia de la aceptación", () => {
     const repository = new JobRepository(connection.db);
 
     // Creamos el ProcessingRun necesario para el análisis.
-    await service.accept(input);
+    await service.accept(input, "persistence-requirements-001");
     const [run] = await connection.db.select().from(processingRuns);
 
     const jobOfferId = randomUUID();
@@ -552,7 +564,7 @@ describe("persistencia de la aceptación", () => {
   it("reutiliza los IDs de requisitos activos cuando el conjunto no cambia", async () => {
     const repository = new JobRepository(connection.db);
 
-    await service.accept(input);
+    await service.accept(input, "persistence-reuse-requirements-001");
     const [run] = await connection.db.select().from(processingRuns);
 
     const jobOfferId = randomUUID();
@@ -712,7 +724,7 @@ describe("persistencia de la aceptación", () => {
   it("desactiva los requisitos anteriores cuando cambia el conjunto", async () => {
     const repository = new JobRepository(connection.db);
 
-    await service.accept(input);
+    await service.accept(input, "persistence-replace-requirements-001");
     const [run] = await connection.db.select().from(processingRuns);
 
     const jobOfferId = randomUUID();
@@ -870,7 +882,7 @@ describe("persistencia de la aceptación", () => {
   it("marca como FAILED un JobAnalysis pendiente", async () => {
     const repository = new JobRepository(connection.db);
 
-    await service.accept(input);
+    await service.accept(input, "persistence-change-analysis-001");
     const [run] = await connection.db.select().from(processingRuns);
 
     const jobOfferId = randomUUID();
@@ -922,7 +934,7 @@ describe("persistencia de la aceptación", () => {
 
   it("crea y reutiliza un JobAnalysis pendiente", async () => {
     const repository = new JobRepository(connection.db);
-    await service.accept(input);
+    await service.accept(input, "persistence-reuse-analysis-001");
 
     const [run] = await connection.db.select().from(processingRuns);
     expect(run).toBeDefined();
@@ -972,7 +984,7 @@ describe("persistencia de la aceptación", () => {
     "recupera un JobAnalysis existente en estado %s",
     async (status) => {
       const repository = new JobRepository(connection.db);
-      await service.accept(input);
+      await service.accept(input, "persistence-reuse-analysis-002");
 
       const [run] = await connection.db.select().from(processingRuns);
       expect(run).toBeDefined();

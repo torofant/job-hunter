@@ -133,7 +133,7 @@ describe("procesador interno", () => {
   });
 
   it("completa el procesamiento básico", async () => {
-    await service.accept(input);
+    await service.accept(input, "processor-basic-001");
 
     await processor.processAvailable();
 
@@ -148,7 +148,7 @@ describe("procesador interno", () => {
   });
 
   it("recupera una ejecución PROCESSING abandonada", async () => {
-    await service.accept(input);
+    await service.accept(input, "processor-recover-abandoned-001");
 
     const [run] = await connection.db.select().from(processingRuns);
 
@@ -173,7 +173,7 @@ describe("procesador interno", () => {
   });
 
   it("marca como FAILED una ejecución abandonada en el tercer intento", async () => {
-    await service.accept(input);
+    await service.accept(input, "processor-failed-third-attempt-001");
 
     const [run] = await connection.db.select().from(processingRuns);
 
@@ -202,7 +202,7 @@ describe("procesador interno", () => {
   });
 
   it("salta una ejecución bloqueada con FOR UPDATE SKIP LOCKED", async () => {
-    await service.accept(input);
+    await service.accept(input, "processor-skip-locked-001");
 
     const [run] = await connection.db.select().from(processingRuns);
 
@@ -252,7 +252,7 @@ describe("procesador interno", () => {
   });
 
   it("ejecuta el enriquecimiento y persiste AIUsage", async () => {
-    const { detectionId } = await service.accept(input);
+    const { detectionId } = await service.accept(input, "processor-execute-persist-001");
 
     await processor.processAvailable();
 
@@ -292,7 +292,7 @@ describe("procesador interno", () => {
   });
 
   it("crea y asocia el JobOffer y persiste el resultado del filtro", async () => {
-    const { detectionId } = await service.accept(input);
+    const { detectionId } = await service.accept(input, "processor-create-asociate-persist-001");
 
     await processor.processAvailable();
 
@@ -343,7 +343,7 @@ describe("procesador interno", () => {
   });
 
   it("persiste una oferta REJECTED con todas las razones aplicables", async () => {
-    const { detectionId } = await service.accept(input);
+    const { detectionId } = await service.accept(input, "processor-persist-rejected-001");
 
     vi.mocked(jobEnrichmentService.enrich).mockResolvedValueOnce({
       enrichment: {
@@ -394,7 +394,7 @@ describe("procesador interno", () => {
   });
 
   it("continúa el procesamiento cuando falla el enriquecimiento con Claude", async () => {
-    const { detectionId } = await service.accept(input);
+    const { detectionId } = await service.accept(input, "processor-enriquement-error-001");
 
     vi.mocked(jobEnrichmentService.enrich).mockRejectedValueOnce(
       new Error("Error de Claude")
@@ -463,7 +463,7 @@ describe("procesador interno", () => {
   });
 
   it("marca el análisis como FAILED cuando falla la extracción de requisitos", async () => {
-    const { detectionId } = await service.accept(input);
+    const { detectionId } = await service.accept(input, "processor-replace-analysis-001");
 
     vi.mocked(requirementExtractionService.extract).mockRejectedValueOnce(
       new Error("Error al extraer requisitos")
@@ -510,7 +510,7 @@ describe("procesador interno", () => {
   });
 
   it("extrae requisitos, ejecuta matching y completa el análisis", async () => {
-    const { detectionId } = await service.accept(input);
+    const { detectionId } = await service.accept(input, "processor-extract-excecute-complete-001");
 
     vi.mocked(requirementExtractionService.extract).mockResolvedValueOnce({
       result: {
@@ -578,7 +578,7 @@ describe("procesador interno", () => {
   });
 
   it("no repite la extracción cuando recupera una ejecución con el análisis COMPLETED", async () => {
-    const { detectionId } = await service.accept(input);
+    const { detectionId } = await service.accept(input, "processor-completed-extract-001");
 
     await processor.processAvailable();
 
@@ -633,7 +633,7 @@ describe("procesador interno", () => {
   });
 
   it("reintenta el procesamiento cuando falla la persistencia del análisis", async () => {
-    await service.accept(input);
+    await service.accept(input, "processor-retry-persistence-001");
 
     const persistSpy = vi
       .spyOn(jobs, "persistCompletedJobAnalysis")
@@ -673,7 +673,7 @@ describe("procesador interno", () => {
         salary_currency: "EUR",
         salary_period: "annual"
       }
-    });
+    }, "processor-include-salary-001");
 
     const results = await processor.processAvailable();
 

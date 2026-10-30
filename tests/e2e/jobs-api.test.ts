@@ -5,7 +5,9 @@ import { createApp } from "../../src/app.js";
 import {
   jobDetections,
   processingRuns,
-  userProfiles
+  userProfiles,
+  rawJobInputs,
+  idempotencyKeys
 } from "../../src/database/schema/index.js";
 import { clearDatabase, createTestDatabase } from "../helpers/database.js";
 import { testEnvironment } from "../helpers/environment.js";
@@ -154,7 +156,10 @@ describe("POST /api/jobs", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/jobs",
-      headers: { authorization: "Bearer test-api-key" },
+      headers: {
+        authorization: "Bearer test-api-key",
+        "idempotency-key": "e2e-job-acceptance-001"
+      },
       payload: {
         source: "linkedin",
         title: "Developer",
@@ -210,7 +215,10 @@ describe("POST /api/jobs", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/jobs",
-      headers: { authorization: "Bearer test-api-key" },
+      headers: {
+        authorization: "Bearer test-api-key",
+        "idempotency-key": "e2e-invalid-input-001"
+      },
       payload: { source: "linkedin" }
     });
 
@@ -219,5 +227,267 @@ describe("POST /api/jobs", () => {
       error: "VALIDATION_ERROR",
       message: "La entrada no es válida"
     });
+  });
+
+  it("rechaza una entrada sin Idempotency-Key", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/jobs",
+      headers: { authorization: "Bearer test-api-key" },
+      payload: {
+        source: "linkedin",
+        title: "Developer",
+        company: "Example",
+        url: "https://example.com/jobs/no-key",
+        detected_at: "2026-09-24T10:00:00Z"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().code).toBe("IDEMPOTENCY_KEY_REQUIRED");
+  });
+
+  it("reutiliza la detección cuando se repite la misma clave y contenido", async () => {
+    const payload = {
+      source: "linkedin",
+      title: "Developer",
+      company: "Example",
+      url: "https://example.com/jobs/retry",
+      detected_at: "2026-09-24T10:00:00Z"
+    };
+
+    const headers = {
+      authorization: "Bearer test-api-key",
+      "idempotency-key": "e2e-job-retry-001"
+    };
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/jobs",
+      headers,
+      payload
+    });
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/jobs",
+      headers,
+      payload
+    });
+
+    expect(first.statusCode).toBe(202);
+    expect(second.statusCode).toBe(202);
+
+    const firstId = first.json<{ detection_id: string }>().detection_id;
+    const secondId = second.json<{ detection_id: string }>().detection_id;
+
+    expect(secondId).toBe(firstId);
+
+    const detections = await connection.db
+      .select()
+      .from(jobDetections);
+
+    const rawInputs = await connection.db
+      .select()
+      .from(rawJobInputs);
+
+    const keys = await connection.db
+      .select()
+      .from(idempotencyKeys);
+
+    expect(detections).toHaveLength(1);
+    expect(rawInputs).toHaveLength(1);
+    expect(keys).toHaveLength(1);
+  });
+
+  it("procesa peticiones concurrentes con la misma clave una sola vez", async () => {
+    const headers = {
+      authorization: "Bearer test-api-key",
+      "idempotency-key": "e2e-job-concurrent-001"
+    };
+
+    const payload = {
+      source: "linkedin",
+      title: "Concurrent Developer",
+      company: "Example",
+      url: "https://example.com/jobs/concurrent",
+      detected_at: "2026-09-24T10:00:00Z"
+    };
+
+    const [first, second] = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: "/api/jobs",
+        headers,
+        payload
+      }),
+      app.inject({
+        method: "POST",
+        url: "/api/jobs",
+        headers,
+        payload
+      })
+    ]);
+
+    expect(first.statusCode, `Primera respuesta: ${first.body}`).toBe(202);
+    expect(second.statusCode, `Segunda respuesta: ${second.body}`).toBe(202);
+
+    const firstId = first.json<{ detection_id: string }>().detection_id;
+    const secondId = second.json<{ detection_id: string }>().detection_id;
+
+    expect(secondId).toBe(firstId);
+
+    const detections = await connection.db
+      .select()
+      .from(jobDetections);
+
+    const rawInputs = await connection.db
+      .select()
+      .from(rawJobInputs);
+
+    const keys = await connection.db
+      .select()
+      .from(idempotencyKeys);
+
+    expect(detections).toHaveLength(1);
+    expect(rawInputs).toHaveLength(1);
+    expect(keys).toHaveLength(1);
+  });
+
+  it("rechaza la misma clave con contenido diferente", async () => {
+    const headers = {
+      authorization: "Bearer test-api-key",
+      "idempotency-key": "e2e-job-conflict-001"
+    };
+
+    const payload = {
+      source: "linkedin",
+      title: "Developer",
+      company: "Example",
+      url: "https://example.com/jobs/conflict",
+      detected_at: "2026-09-24T10:00:00Z"
+    };
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/jobs",
+      headers,
+      payload
+    });
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/jobs",
+      headers,
+      payload: { ...payload, title: "Senior Developer" }
+    });
+
+    expect(first.statusCode).toBe(202);
+    expect(second.statusCode).toBe(409);
+    expect(second.json().code).toBe("IDEMPOTENCY_KEY_REUSED");
+
+    const detections = await connection.db
+      .select()
+      .from(jobDetections);
+
+    expect(detections).toHaveLength(1);
+  });
+
+  it.each([
+    ["clave vacía", ""],
+    ["espacios", "invalid key"],
+    ["carácter de control", "invalid\nkey"],
+    ["caracteres no ASCII", "clavé"],
+    ["más de 255 caracteres", "a".repeat(256)]
+  ])("rechaza una Idempotency-Key inválida: %s", async (_description, key) => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/jobs",
+      headers: {
+        authorization: "Bearer test-api-key",
+        "idempotency-key": key
+      },
+      payload: {
+        source: "linkedin",
+        title: "Developer",
+        company: "Example",
+        url: "https://example.com/jobs/invalid-key",
+        detected_at: "2026-09-24T10:00:00Z"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().code).toBe("IDEMPOTENCY_KEY_INVALID");
+  });
+
+  it("acepta una Idempotency-Key de 255 caracteres", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/jobs",
+      headers: {
+        authorization: "Bearer test-api-key",
+        "idempotency-key": "a".repeat(255)
+      },
+      payload: {
+        source: "linkedin",
+        title: "Developer",
+        company: "Example",
+        url: "https://example.com/jobs/max-key",
+        detected_at: "2026-09-24T10:00:00Z"
+      }
+    });
+
+    expect(response.statusCode).toBe(202);
+  });
+
+  it("reconoce como idénticas las fechas equivalentes y raw_metadata ausente o null", async () => {
+    const headers = {
+      authorization: "Bearer test-api-key",
+      "idempotency-key": "e2e-job-canonical-001"
+    };
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/jobs",
+      headers,
+      payload: {
+        source: "linkedin",
+        title: "Developer",
+        company: "Example",
+        url: "https://example.com/jobs/canonical",
+        detected_at: "2026-09-24T10:00:00Z"
+      }
+    });
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/jobs",
+      headers,
+      payload: {
+        detected_at: "2026-09-24T12:00:00+02:00",
+        url: "https://example.com/jobs/canonical",
+        company: "Example",
+        title: "Developer",
+        source: "linkedin",
+        raw_metadata: null
+      }
+    });
+
+    expect(first.statusCode).toBe(202);
+    expect(second.statusCode).toBe(202);
+
+    expect(
+      second.json<{ detection_id: string }>().detection_id
+    ).toBe(
+      first.json<{ detection_id: string }>().detection_id
+    );
+
+    const detections = await connection.db.select().from(jobDetections);
+    const rawInputs = await connection.db.select().from(rawJobInputs);
+    const keys = await connection.db.select().from(idempotencyKeys);
+
+    expect(detections).toHaveLength(1);
+    expect(rawInputs).toHaveLength(1);
+    expect(keys).toHaveLength(1);
   });
 });

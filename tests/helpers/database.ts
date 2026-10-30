@@ -2,11 +2,20 @@ import { sql } from "drizzle-orm";
 
 import { createDatabase } from "../../src/database/client.js";
 
-export const testDatabaseUrl =
-  process.env.TEST_DATABASE_URL ?? "postgresql://job_hunter:job_hunter@localhost:5432/job_hunter";
+function getTestDatabaseUrl(): string {
+  const url = process.env.TEST_DATABASE_URL;
+
+  if (!url) {
+    throw new Error(
+      "TEST_DATABASE_URL debe estar configurada para ejecutar tests de integración"
+    );
+  }
+
+  return url;
+}
 
 export function createTestDatabase() {
-  return createDatabase(testDatabaseUrl);
+  return createDatabase(getTestDatabaseUrl());
 }
 
 export async function clearDatabase(connection: ReturnType<typeof createDatabase>): Promise<void> {
