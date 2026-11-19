@@ -364,7 +364,7 @@ describe("calculateScoringResult", () => {
     });
 
     expect(result.breakdown.location).toBeCloseTo(14);
-    expect(result.score).toBeCloseTo(93.3333, 3);
+    expect(result.score).toBeNull();
   });
 
   it("mantiene una contribución de cero para localidad con cero puntos", () => {
@@ -378,12 +378,16 @@ describe("calculateScoringResult", () => {
     });
 
     expect(result.breakdown.location).toBe(10);
-    expect(result.score).toBeCloseTo(66.6667, 3);
+    expect(result.score).toBeNull();
   });
 
   it("excluye la localidad desconocida del denominador", () => {
     const result = calculateScoringResult({
       ...emptyInputs,
+      jobType: {
+        family: "MATCH",
+        role: "UNKNOWN"
+      },
       location: {
         modality: "MATCH",
         locality: "UNKNOWN",
@@ -395,4 +399,36 @@ describe("calculateScoringResult", () => {
     expect(result.score).toBe(100);
   });
 
+  it("no calcula score si solo son evaluables ubicación y condiciones laborales", () => {
+    const result = calculateScoringResult({
+      jobType: {
+        family: "UNKNOWN",
+        role: "UNKNOWN"
+      },
+      technologies: {
+        required: [],
+        preferred: []
+      },
+      experience: {
+        general: [],
+        specific: []
+      },
+      location: {
+        modality: "MATCH",
+        locality: "MATCH",
+        localityPoints: 5
+      },
+      employmentConditions: {
+        salary: "UNKNOWN",
+        contract: "MATCH",
+        workingHours: "MATCH"
+      },
+      languages: []
+    });
+
+    expect(result.score).toBeNull();
+    expect(result.category).toBeNull();
+    expect(result.breakdown.location).toBe(15);
+    expect(result.breakdown.employmentConditions).toBe(5);
+  });
 });

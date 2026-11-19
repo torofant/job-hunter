@@ -56,8 +56,12 @@ function scoreModality(
 
 
 function scoreLocalityPoints(jobOffer: JobOffer): number | null {
+    const normalizedCountry = jobOffer.country?.trim().toLowerCase();
     if (jobOffer.modality === "REMOTE") {
-        return jobOffer.country === "Spain" ? 5 : null;
+        return normalizedCountry === "spain" ||
+            normalizedCountry === "españa"
+            ? 5
+            : null;
     }
 
     if (!jobOffer.city || jobOffer.city === "UNKNOWN") {

@@ -198,7 +198,7 @@ export function calculateScoringResult(
     ...toWeightedResults(inputs.experience.specific, 10)
   ];
 
-    const locationResults: WeightedMatchingResult[] = [
+  const locationResults: WeightedMatchingResult[] = [
     { result: inputs.location.modality, weight: 10 },
     {
       result: inputs.location.locality,
@@ -228,7 +228,25 @@ export function calculateScoringResult(
     ...languageResults,
   ];
 
-  const score = calculateWeightedScore(allResults);
+  const profileFitResults = [
+    ...jobTypeResults,
+    ...technologyResults,
+    ...experienceResults,
+    ...languageResults
+  ];
+
+  const hasEvaluableProfileFit = profileFitResults.some((item) => {
+    const value =
+      item.scoreOverride !== undefined
+        ? item.scoreOverride
+        : matchingResultToScore(item.result);
+
+    return value !== null;
+  });
+
+  const score = hasEvaluableProfileFit
+    ? calculateWeightedScore(allResults)
+    : null;
 
   const breakdown: ScoringBreakdown = {
     jobType: calculateOriginalScaleContribution(jobTypeResults),

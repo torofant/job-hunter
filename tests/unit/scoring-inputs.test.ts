@@ -328,16 +328,23 @@ describe("buildScoringInputs", () => {
         expect(inputs.employmentConditions.contract).toBe("MATCH");
     });
 
-    it("asigna 5 puntos a una oferta remota en España", () => {
-        const inputs = buildScoringInputs({
-            jobOffer: { ...jobOffer, modality: "REMOTE", country: "Spain" } as JobOffer,
-            userProfile,
-            requirements: [],
-            matches: []
-        });
+    it.each(["Spain", "España"])(
+        "asigna 5 puntos a una oferta remota en %s",
+        (country) => {
+            const inputs = buildScoringInputs({
+                jobOffer: {
+                    ...jobOffer,
+                    modality: "REMOTE",
+                    country
+                } as JobOffer,
+                userProfile,
+                requirements: [],
+                matches: []
+            });
 
-        expect(inputs.location.localityPoints).toBe(5);
-    });
+            expect(inputs.location.localityPoints).toBe(5);
+        }
+    );
 
     it("asigna 5 puntos a una oferta presencial en Castellón", () => {
         const inputs = buildScoringInputs({

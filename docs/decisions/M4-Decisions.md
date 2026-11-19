@@ -65,6 +65,8 @@ Se aplicarán los pesos y criterios de M0.11:
 | Idiomas | 5 % |
 | **Total implementado** | **95 %** |
 
+El score global y su categoría quedan en `null` cuando no se puede evaluar ninguna señal de ajuste profesional: familia o rol, tecnologías, experiencia o idiomas. La ubicación y las condiciones laborales pueden aportar al desglose, pero por sí solas no generan un score ni una categoría de compatibilidad.
+
 El total implementado es 95 % porque se excluye el 5 % de `Otros requisitos` definido en M0.11, conforme a M4.1. Para obtener un score de 0 a 100, los pesos de las categorías implementadas que sean evaluables se renormalizarán proporcionalmente.
 
 Desglose:
@@ -456,6 +458,10 @@ Una fase no se considerará terminada únicamente porque compile. Las pruebas de
 ### Relación con M0.11
 
 Concreta los criterios de validación de M0.11 y extiende la estrategia de testing establecida en M3.26 a las responsabilidades de M4.
+
+### Validación adicional del scoring
+
+Se verifica que, si no hay señales evaluables de ajuste profesional (familia o rol, tecnologías, experiencia o idiomas), el score y la categoría global sean null, aunque ubicación o condiciones laborales tengan resultados evaluables. También se verifica que una oferta remota en España reciba los puntos de localidad cuando el país se indique como Spain o España. Las pruebas unitarias correspondientes pasan.
 
 ---
 
