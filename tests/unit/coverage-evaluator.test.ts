@@ -67,7 +67,6 @@ describe("evaluateCoverage", () => {
     expect(result.technologies).toBe(0);
     expect(result.experience).toBe(0);
     expect(result.languages).toBe(0);
-    expect(result.other_requirements).toBe(0);
   });
 
   it("no asigna FULL a una categoría con requisitos extraídos", () => {

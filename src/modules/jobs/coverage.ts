@@ -14,8 +14,7 @@ export type CoverageCategory =
   | "experience"
   | "location"
   | "employment_conditions"
-  | "languages"
-  | "other_requirements";
+  | "languages";
 
 export const COVERAGE_CATEGORIES: CoverageCategory[] = [
   "job_type",
@@ -23,8 +22,7 @@ export const COVERAGE_CATEGORIES: CoverageCategory[] = [
   "experience",
   "location",
   "employment_conditions",
-  "languages",
-  "other_requirements"
+  "languages"
 ];
 
 export type CoverageBreakdown = Record<
@@ -161,9 +159,6 @@ export function calculateCoverageBreakdown(
       inputs.employment_conditions
     ),
     languages: calculateCoverageScore(inputs.languages),
-    other_requirements: calculateCoverageScore(
-      inputs.other_requirements
-    )
   };
 }
 
@@ -181,8 +176,7 @@ export const COVERAGE_CATEGORY_WEIGHTS: Record<
   experience: 20,
   location: 15,
   employment_conditions: 10,
-  languages: 5,
-  other_requirements: 5
+  languages: 5
 };
 
 /**

@@ -15,7 +15,6 @@ export const scoringBreakdownSchema = z.object({
   location: z.number().min(0).max(15).nullable(),
   employmentConditions: z.number().min(0).max(10).nullable(),
   languages: z.number().min(0).max(5).nullable(),
-  otherRequirements: z.number().min(0).max(5).nullable()
 });
 
 export const scoringResultSchema = z.object({
@@ -134,7 +133,6 @@ export type ScoringInputs = {
     workingHours: WeightedMatchingResult["result"];
   };
   languages: WeightedMatchingResult["result"][];
-  otherRequirements: WeightedMatchingResult["result"][];
 };
 
 export function calculateWeightedScore(
@@ -220,7 +218,6 @@ export function calculateScoringResult(
   ];
 
   const languageResults = toWeightedResults(inputs.languages, 5);
-  const otherResults = toWeightedResults(inputs.otherRequirements, 5);
 
   const allResults = [
     ...jobTypeResults,
@@ -229,7 +226,6 @@ export function calculateScoringResult(
     ...locationResults,
     ...employmentResults,
     ...languageResults,
-    ...otherResults
   ];
 
   const score = calculateWeightedScore(allResults);
@@ -241,7 +237,6 @@ export function calculateScoringResult(
     location: calculateOriginalScaleContribution(locationResults),
     employmentConditions: calculateOriginalScaleContribution(employmentResults),
     languages: calculateOriginalScaleContribution(languageResults),
-    otherRequirements: calculateOriginalScaleContribution(otherResults)
   };
 
   return {

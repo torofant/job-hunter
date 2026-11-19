@@ -19,32 +19,29 @@ Cada subfase deberá probarse y validarse antes de avanzar a la siguiente. Las d
 
 ---
 
-## M4.1 — Categoría de Requirement `OTHER`
+## M4.1 — Categorías admitidas de `Requirement`
 
-### Decisión
+### Decisión vigente
 
-Se ampliará el enum de categorías de `Requirement` para admitir `OTHER`, además de las categorías existentes:
+M4 no implementará `OTHER` como categoría matcheable de `Requirement`. Las categorías admitidas serán:
 
 ```text
 TECHNOLOGY
 EXPERIENCE
 LANGUAGE
-OTHER
 ```
 
-`OTHER` se evaluará mediante lógica determinista. Cuando no exista evidencia estructurada suficiente en `UserProfile` para determinar si se cumple un requisito `OTHER`, el resultado será `UNKNOWN`, no `MISSING`.
+No se añadirá un campo genérico `otherRequirements` a `UserProfile` ni lógica específica de Matching, Scoring o Coverage para requisitos genéricos. Los requisitos que no puedan representarse mediante las categorías admitidas no se convertirán a `OTHER` ni participarán en esos cálculos.
 
-No se añadirá un campo genérico `otherRequirements` a `UserProfile`.
-
-La ausencia de evidencia suficiente no se interpretará como prueba de incumplimiento. Tampoco se añadirá una comparación semántica nueva delegada a Claude.
+Esta decisión sustituye la decisión anterior de M4.1 que proponía incorporar `OTHER`.
 
 ### Motivo
 
-M0.11 reserva un 5 % del Scoring para otros requisitos. Excluir `OTHER` dejaría incompleto el alcance definido para el scoring. Sin embargo, la ausencia de un campo de perfil que represente un requisito genérico no demuestra que la persona no lo cumpla. Añadir ese campo ampliaría el modelo de `UserProfile` sin una decisión aprobada.
+La implementación se limita a las categorías previstas para el funcionamiento actual del proyecto. Añadir una categoría genérica exigiría reglas de evaluación y datos de perfil adicionales.
 
 ### Relación con M0.11
 
-M0.11 contempla la categoría `other`. M3 la dejó fuera de las categorías matcheables durante su alcance inicial. M4 revierte esa limitación de forma explícita para completar el alcance de Scoring de M0.11, conservando la semántica transversal de `UNKNOWN` definida en M3.9.
+M0.11 contempla `other` y reserva un 5 % del Scoring para otros requisitos. M4 modifica explícitamente ese alcance: `OTHER` no se implementará. M4.2 deberá documentar cómo se calcula el score sin esa categoría.
 
 ---
 
@@ -66,8 +63,9 @@ Se aplicarán los pesos y criterios de M0.11:
 | Ubicación y modalidad | 15 % |
 | Condiciones laborales | 10 % |
 | Idiomas | 5 % |
-| Otros requisitos | 5 % |
-| **Total** | **100 %** |
+| **Total implementado** | **95 %** |
+
+El total implementado es 95 % porque se excluye el 5 % de `Otros requisitos` definido en M0.11, conforme a M4.1. Para obtener un score de 0 a 100, los pesos de las categorías implementadas que sean evaluables se renormalizarán proporcionalmente.
 
 Desglose:
 
@@ -145,7 +143,7 @@ Se respetarán las reglas de M0.11 para `UNKNOWN` y `N/A`.
 - Si no existe ninguna subcategoría evaluable, el score será `null` y la categoría de scoring también será `null`.
 - La renormalización no modifica los pesos relativos definidos para las subcategorías ni utiliza Coverage como multiplicador o factor de penalización.
 
-Esta aclaración concreta el tratamiento matemático del score global cuando falta información. No modifica las categorías, los pesos originales, las bandas de clasificación, los hard filters ni las reglas de Matching definidas en M0.11 y en las decisiones previas.
+Esta aclaración concreta el tratamiento matemático del score global cuando falta información. La renormalización conserva los pesos relativos de las categorías implementadas. La exclusión de `OTHER` y su 5 % es la excepción aprobada en M4.1 y M4.2; el resto de categorías, bandas, hard filters y reglas de Matching de M0.11 se conserva.
 
 ### Motivo
 
@@ -153,7 +151,7 @@ La puntuación debe ser reproducible, comprobable mediante tests y coherente con
 
 ### Relación con M0.11
 
-M0.11 ya define las categorías, ponderaciones, bandas, tratamiento del salario, ubicación, modalidad y condiciones laborales. M4 concreta su implementación determinista; no redefine esos criterios. La separación entre Matching y Scoring se conserva conforme a M3.15.
+M0.11 es la referencia para las categorías, ponderaciones y criterios conservados. M4 excluye explícitamente `OTHER` y su 5 % conforme a M4.1; las demás categorías mantienen sus pesos relativos, y el score se renormaliza entre las categorías evaluables.
 
 ---
 
@@ -435,8 +433,8 @@ Cada subfase se implementará y validará antes de comenzar la siguiente.
 
 Las pruebas cubrirán como mínimo:
 
-- `OTHER` se admite en el schema y la persistencia de `Requirement`.
-- `OTHER` sin evidencia estructurada suficiente produce `UNKNOWN`, no `MISSING`.
+- `OTHER` no aparece como categoría admitida en los schemas, prompts, normalización, Matching, Scoring ni Coverage.
+- Scoring conserva los pesos relativos de las categorías implementadas, excluye el 5 % de `OTHER` y renormaliza las categorías evaluables a un score de 0 a 100.
 - Las categorías de Matching existentes conservan su comportamiento.
 - Scoring respeta los pesos, bandas y reglas de M0.11.
 - Los valores `UNKNOWN` y `N/A` se tratan conforme a M0.11.
@@ -463,11 +461,11 @@ Concreta los criterios de validación de M0.11 y extiende la estrategia de testi
 
 # M4 STATUS
 
-**M4 — DISEÑO DOCUMENTADO; IMPLEMENTACIÓN PENDIENTE**
+**M4 — IMPLEMENTACIÓN EN CURSO; VALIDACIÓN PENDIENTE**
 
 La implementación se realizará en este orden:
 
-1. M4.1 — Requirements `OTHER`.
+1. M4.1 — Categorías admitidas de Requirement (OTHER excluido).
 2. M4.2 — Scoring.
 3. M4.3 — Coverage y Confidence.
 4. M4.4 — Persistencia y priorización.

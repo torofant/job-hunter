@@ -1,3 +1,4 @@
+
 import type { JobRepository } from "../jobs/job.repository.js";
 import type { JobEnrichmentService } from "../jobs/job-enrichment.service.js";
 import { normalizeJobOfferWithAI } from "../jobs/job.normalizer.js";
@@ -23,6 +24,7 @@ import {
   buildNotificationMessage,
   formatSalaryMetadata
 } from "../notifications/notification-message.js";
+import type { LinkedInDescriptionAdapter } from "../jobs/linkedin-description.adapter.js";
 
 const PROCESSOR_INTERVAL_MS = 1_000;
 
@@ -39,7 +41,8 @@ export class Processor {
     private readonly recoveryTimeoutMs: number,
     private readonly userProfileRepository: UserProfileRepository,
     private readonly requirementExtractionService: JobRequirementExtractionService,
-    private readonly reportError: (error: unknown) => void = () => undefined
+    private readonly reportError: (error: unknown) => void = () => undefined,
+    private readonly linkedinDescriptionAdapter?: LinkedInDescriptionAdapter
   ) { }
 
   start(): void {
@@ -124,8 +127,33 @@ export class Processor {
         );
       }
 
+      // Conservamos el input original y solo sustituimos la descripción
+      // si podemos recuperarla de una oferta pública de LinkedIn.
+      let effectiveRawInput = detection.rawInput;
+
+      const originalDescription =
+        detection.rawInput.description?.trim();
+
+      if (
+        detection.rawInput.source === "linkedin" &&
+        !originalDescription &&
+        this.linkedinDescriptionAdapter
+      ) {
+        const recoveredDescription =
+          await this.linkedinDescriptionAdapter.getDescription(
+            detection.rawInput.url
+          );
+
+        if (recoveredDescription) {
+          effectiveRawInput = {
+            ...detection.rawInput,
+            description: recoveredDescription
+          };
+        }
+      }
+
       const normalized = await normalizeJobOfferWithAI(
-        detection.rawInput,
+        effectiveRawInput,
         this.jobEnrichmentService
       );
 
@@ -177,7 +205,7 @@ export class Processor {
       const userProfile = await this.userProfileRepository.getProfile();
 
       const extractionInput = buildRequirementExtractionInput(
-        detection.rawInput
+        effectiveRawInput
       );
 
       let extraction: Awaited<
@@ -188,7 +216,9 @@ export class Processor {
         extraction = await this.requirementExtractionService.extract(
           extractionInput
         );
-      } catch {
+      } catch (error) {
+        console.error("Error al extraer requisitos:", error);
+
         await this.jobRepository.markRequirementExtractionFailed(analysis.id);
         await this.processingRepository.completeRun(run.id);
         return null;
@@ -293,9 +323,9 @@ export class Processor {
         confidence,
         notification: notificationResult.ok
           ? {
-            message: notificationResult.message,
-            detectedAt: detection.rawInput.detected_at
-          }
+              message: notificationResult.message,
+              detectedAt: detection.rawInput.detected_at
+            }
           : null
       });
 

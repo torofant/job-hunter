@@ -92,39 +92,6 @@ export const extractedRequirementSchema = z.union([
       components: z.array(languageItemSchema).min(2)
     })
   }),
-
-  z.object({
-    category: z.literal("other"),
-    type: z.literal("single"),
-    importance: requirementImportanceSchema,
-    data: z.object({
-      description: z.string().min(1)
-    })
-  }),
-  z.object({
-    category: z.literal("other"),
-    type: z.literal("alternative"),
-    importance: requirementImportanceSchema,
-    data: z.object({
-      options: z.array(
-        z.object({
-          description: z.string().min(1)
-        })
-      ).min(2)
-    })
-  }),
-  z.object({
-    category: z.literal("other"),
-    type: z.literal("group"),
-    importance: requirementImportanceSchema,
-    data: z.object({
-      components: z.array(
-        z.object({
-          description: z.string().min(1)
-        })
-      ).min(2)
-    })
-  })
 ]);
 
 export const requirementExtractionResultSchema = z.object({
@@ -137,4 +104,26 @@ export type ExtractedRequirement = z.infer<
 
 export type RequirementExtractionResult = z.infer<
   typeof requirementExtractionResultSchema
+>;
+
+const claudeRequirementItemSchema = z.object({
+  value: z.string().min(1),
+  targetType: z.enum(["technology", "role", "area"]).nullable(),
+  minimumYears: z.number().nonnegative().nullable(),
+  minimumLevel: z.enum(["A1", "A2", "B1", "B2", "C1", "C2"]).nullable()
+});
+
+export const claudeRequirementExtractionResultSchema = z.object({
+  requirements: z.array(
+    z.object({
+      category: z.enum(["technology", "experience", "language"]),
+      type: z.enum(["single", "alternative", "group"]),
+      importance: requirementImportanceSchema,
+      items: z.array(claudeRequirementItemSchema).min(1)
+    })
+  )
+});
+
+export type ClaudeRequirementExtractionResult = z.infer<
+  typeof claudeRequirementExtractionResultSchema
 >;

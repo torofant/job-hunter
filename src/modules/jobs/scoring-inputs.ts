@@ -216,10 +216,6 @@ export function buildScoringInputs(input: {
         (requirement) => requirement.category === "language"
     );
 
-    const otherRequirements = requirements.filter(
-        (requirement) => requirement.category === "other"
-    );
-
     const generalExperience: MatchResult[] = [];
     const specificExperience: MatchResult[] = [];
 
@@ -268,6 +264,5 @@ export function buildScoringInputs(input: {
             workingHours: scoreWorkingHours(jobOffer)
         },
         languages: languages.map(resultFor),
-        otherRequirements: otherRequirements.map(resultFor)
     };
 }

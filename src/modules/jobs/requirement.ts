@@ -84,36 +84,6 @@ export const requirementSchema = z.union([
       components: z.array(languageItemSchema).min(2)
     })
   }),
-
-  requirementBaseSchema.extend({
-    category: z.literal("other"),
-    type: z.literal("single"),
-    data: z.object({
-      description: z.string().min(1)
-    })
-  }),
-  requirementBaseSchema.extend({
-    category: z.literal("other"),
-    type: z.literal("alternative"),
-    data: z.object({
-      options: z.array(
-        z.object({
-          description: z.string().min(1)
-        })
-      ).min(2)
-    })
-  }),
-  requirementBaseSchema.extend({
-    category: z.literal("other"),
-    type: z.literal("group"),
-    data: z.object({
-      components: z.array(
-        z.object({
-          description: z.string().min(1)
-        })
-      ).min(2)
-    })
-  })
 ]);
 
 export const requirementEntitySchema = z.union([

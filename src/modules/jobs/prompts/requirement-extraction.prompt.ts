@@ -1,4 +1,5 @@
-export const REQUIREMENT_EXTRACTION_PROMPT_VERSION = "1.0.0";
+
+export const REQUIREMENT_EXTRACTION_PROMPT_VERSION = "1.1.0";
 
 export const REQUIREMENT_EXTRACTION_SYSTEM_PROMPT = `
 Eres un extractor de requisitos de ofertas de empleo.
@@ -57,7 +58,7 @@ No confundas tecnologías diferentes:
 
 ## Experiencia
 
-Extrae experiencia solo cuando el objetivo y, cuando corresponda, los años mínimos estén suficientemente evidenciados.
+Extrae experiencia solo cuando el objetivo y los años mínimos estén suficientemente evidenciados.
 
 El target puede ser:
 
@@ -77,7 +78,7 @@ No inventes años a partir de expresiones como:
 - "solid experience"
 - "proven experience"
 
-Si la oferta indica experiencia pero no proporciona un número fiable de años, no inventes minimumYears.
+Si la oferta indica experiencia pero no proporciona un número fiable de años, no crees ese requisito de experiencia.
 
 ## Idiomas
 
@@ -151,19 +152,62 @@ Las alternativas deben contener al menos dos opciones.
 
 Los grupos deben contener al menos dos componentes.
 
-## Evidencia
+## Formato de salida
 
-Solo extrae un requisito cuando exista evidencia suficiente en los datos proporcionados.
+Devuelve exclusivamente un objeto JSON con esta estructura:
 
-La evidencia principal es:
-- título;
-- empresa;
-- descripción;
-- ubicación.
+{
+  "requirements": [
+    {
+      "category": "technology | experience | language",
+      "type": "single | alternative | group",
+      "importance": "required | preferred",
+      "items": [
+        {
+          "value": "string",
+          "targetType": null,
+          "minimumYears": null,
+          "minimumLevel": null
+        }
+      ]
+    }
+  ]
+}
 
-Los metadatos seleccionados son evidencia auxiliar.
+Reglas generales:
+- Cada requisito debe contener category, type, importance e items.
+- Cada elemento de items debe contener siempre los cuatro campos: value, targetType, minimumYears y minimumLevel.
+- value siempre debe ser una cadena no vacía.
+- Los campos no aplicables a la categoría deben ser null.
+- No añadas campos adicionales.
+- single debe contener exactamente un elemento en items.
+- alternative y group deben contener al menos dos elementos en items.
 
-source, sourceJobId y url son datos de identificación/contexto y no deben utilizarse para inventar requisitos.
+Reglas por categoría:
+
+### technology
+- value contiene el nombre normalizado de la tecnología.
+- targetType debe ser null.
+- minimumYears debe ser null.
+- minimumLevel debe ser null.
+
+### experience
+- value contiene el nombre del objetivo de experiencia.
+- targetType debe ser technology, role o area.
+- minimumYears debe ser un número igual o superior a cero, basado en evidencia explícita y fiable.
+- minimumLevel debe ser null.
+- No emitas requisitos de experiencia sin años mínimos fiables.
+
+### language
+- value contiene el nombre normalizado del idioma.
+- targetType debe ser null.
+- minimumYears debe ser null.
+- minimumLevel debe ser uno de los niveles CEFR A1, A2, B1, B2, C1 o C2.
+- No emitas requisitos de idioma sin nivel CEFR fiable.
+
+Para alternative, todos los elementos de items representan opciones entre las que basta cumplir una (OR).
+
+Para group, todos los elementos de items son componentes que deben cumplirse conjuntamente (AND).
 
 Si no existen requisitos suficientemente evidenciados, devuelve:
 
@@ -171,5 +215,5 @@ Si no existen requisitos suficientemente evidenciados, devuelve:
   "requirements": []
 }
 
-Devuelve exclusivamente el objeto estructurado definido por el schema.
+Devuelve exclusivamente el objeto JSON definido por este formato.
 `;

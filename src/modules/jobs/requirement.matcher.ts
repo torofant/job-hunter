@@ -150,14 +150,7 @@ export function matchRequirement(
 ): RequirementMatch {
   let evaluation: MatchEvaluation;
 
-  if (requirement.category === "other") {
-    evaluation = {
-      result: "UNKNOWN",
-      evidence: {
-        type: "unknown"
-      }
-    };
-  } else if (requirement.type === "single") {
+  if (requirement.type === "single") {
     if (requirement.category === "technology") {
       evaluation = evaluateTechnologyData(
         requirement.data,

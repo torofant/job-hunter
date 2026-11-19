@@ -108,23 +108,6 @@ describe("requirementExtractionResultSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("acepta requisitos other", () => {
-    const result = requirementExtractionResultSchema.safeParse({
-      requirements: [
-        {
-          category: "other",
-          type: "single",
-          importance: "required",
-          data: {
-            description: "carnet de conducir"
-          }
-        }
-      ]
-    });
-
-    expect(result.success).toBe(true);
-  });
-
   it("rechaza lenguaje sin nivel CEFR", () => {
     const result = requirementExtractionResultSchema.safeParse({
       requirements: [

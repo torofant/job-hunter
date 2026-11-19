@@ -166,11 +166,5 @@ export function evaluateCoverage(
       "language",
       input.extractionStatus
     ),
-
-    other_requirements: evaluateRequirementCategory(
-      input.requirements,
-      "other",
-      input.extractionStatus
-    )
   };
 }

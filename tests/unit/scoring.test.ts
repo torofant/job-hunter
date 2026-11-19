@@ -39,8 +39,7 @@ describe("scoring schemas", () => {
       experience: null,
       location: 12,
       employmentConditions: null,
-      languages: 4,
-      otherRequirements: null
+      languages: 4
     };
 
     expect(scoringBreakdownSchema.parse(breakdown)).toEqual(
@@ -56,8 +55,7 @@ describe("scoring schemas", () => {
         experience: 20,
         location: 15,
         employmentConditions: 10,
-        languages: 5,
-        otherRequirements: 5
+        languages: 5
       })
     ).toThrow();
   });
@@ -72,8 +70,7 @@ describe("scoring schemas", () => {
         experience: null,
         location: null,
         employmentConditions: null,
-        languages: null,
-        otherRequirements: null
+        languages: null
       }
     };
 
@@ -90,8 +87,7 @@ describe("scoring schemas", () => {
         experience: 20,
         location: 15,
         employmentConditions: 10,
-        languages: 5,
-        otherRequirements: 5
+        languages: 5
       }
     };
 
@@ -260,8 +256,7 @@ describe("calculateScoringResult", () => {
       contract: "UNKNOWN",
       workingHours: "UNKNOWN"
     },
-    languages: [],
-    otherRequirements: []
+    languages: []
   };
 
   it("devuelve null para score y categoría si nada es evaluable", () => {
@@ -275,8 +270,7 @@ describe("calculateScoringResult", () => {
       experience: null,
       location: null,
       employmentConditions: null,
-      languages: null,
-      otherRequirements: null
+      languages: null
     });
   });
 
@@ -320,7 +314,7 @@ describe("calculateScoringResult", () => {
     expect(result.breakdown.technologies).toBe(17.5);
   });
 
-  it("conserva los pesos originales del breakdown en las siete categorías", () => {
+  it("conserva los pesos originales del breakdown en las seis categorías", () => {
     const result = calculateScoringResult({
       ...emptyInputs,
       jobType: {
@@ -345,7 +339,6 @@ describe("calculateScoringResult", () => {
         workingHours: "N/A"
       },
       languages: ["MATCH", "UNKNOWN"],
-      otherRequirements: ["MATCH", "N/A"]
     });
 
     expect(result.breakdown).toEqual({
@@ -355,7 +348,6 @@ describe("calculateScoringResult", () => {
       location: 10,
       employmentConditions: 5,
       languages: 2.5,
-      otherRequirements: 2.5
     });
 
     expect(result.score).toBe(100);

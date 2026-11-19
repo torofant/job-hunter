@@ -1,9 +1,11 @@
+
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import type { ZodType } from "zod";
 
 import {
+  claudeRequirementExtractionResultSchema,
   requirementExtractionResultSchema,
+  type ClaudeRequirementExtractionResult,
   type RequirementExtractionResult
 } from "./requirement-extraction.js";
 import {
@@ -21,6 +23,112 @@ export type RequirementExtractionResultWithUsage = {
   model: string;
   promptVersion: string;
 };
+
+type ClaudeRequirement = ClaudeRequirementExtractionResult["requirements"][number];
+
+function convertClaudeRequirement(
+  requirement: ClaudeRequirement
+): Record<string, unknown> {
+  const { category, type, importance, items } = requirement;
+
+  if (type === "single" && items.length !== 1) {
+    throw new Error(
+      `Claude devolvió ${items.length} elementos para un requisito single`
+    );
+  }
+
+  if (type !== "single" && items.length < 2) {
+    throw new Error(
+      `Claude devolvió menos de dos elementos para un requisito ${type}`
+    );
+  }
+
+  let mappedItems: Record<string, unknown>[];
+
+  switch (category) {
+    case "technology":
+      mappedItems = items.map((item) => {
+        if (
+          item.targetType !== null ||
+          item.minimumYears !== null ||
+          item.minimumLevel !== null
+        ) {
+          throw new Error(
+            "Claude devolvió campos incompatibles con un requisito technology"
+          );
+        }
+
+        return { technology: item.value };
+      });
+      break;
+
+    case "experience":
+      mappedItems = items.map((item) => {
+        if (
+          item.targetType === null ||
+          item.minimumYears === null ||
+          item.minimumLevel !== null
+        ) {
+          throw new Error(
+            "Claude devolvió datos incompletos o incompatibles con un requisito experience"
+          );
+        }
+
+        return {
+          target: {
+            type: item.targetType,
+            value: item.value
+          },
+          minimumYears: item.minimumYears
+        };
+      });
+      break;
+
+    case "language":
+      mappedItems = items.map((item) => {
+        if (
+          item.targetType !== null ||
+          item.minimumYears !== null ||
+          item.minimumLevel === null
+        ) {
+          throw new Error(
+            "Claude devolvió datos incompletos o incompatibles con un requisito language"
+          );
+        }
+
+        return {
+          language: item.value,
+          minimumLevel: item.minimumLevel
+        };
+      });
+      break;
+  }
+
+  let data: Record<string, unknown>;
+
+  if (type === "single") {
+    data = mappedItems[0];
+  } else if (type === "alternative") {
+    data = { options: mappedItems };
+  } else {
+    data = { components: mappedItems };
+  }
+
+  return {
+    category,
+    type,
+    importance,
+    data
+  };
+}
+
+function convertClaudeResult(
+  result: ClaudeRequirementExtractionResult
+): RequirementExtractionResult {
+  return requirementExtractionResultSchema.parse({
+    requirements: result.requirements.map(convertClaudeRequirement)
+  });
+}
 
 export class JobRequirementExtractionService {
   private readonly client: Anthropic;
@@ -43,17 +151,19 @@ export class JobRequirementExtractionService {
         }
       ],
       output_config: {
-        format: zodOutputFormat(requirementExtractionResultSchema)
+        format: zodOutputFormat(claudeRequirementExtractionResultSchema)
       }
     });
 
-    const result = response.parsed_output;
+    const claudeResult = response.parsed_output;
 
-    if (!result) {
+    if (!claudeResult) {
       throw new Error(
         "Claude no devolvió un resultado válido de extracción de requisitos"
       );
     }
+
+    const result = convertClaudeResult(claudeResult);
 
     return {
       result,

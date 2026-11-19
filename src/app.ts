@@ -12,6 +12,7 @@ import { ProcessingRepository } from "./modules/processing/processing.repository
 import { JobEnrichmentService } from "./modules/jobs/job-enrichment.service.js";
 import { UserProfileRepository } from "./modules/jobs/user-profile.repository.js";
 import { JobRequirementExtractionService } from "./modules/jobs/requirement-extraction.service.js";
+import { LinkedInDescriptionAdapter } from "./modules/jobs/linkedin-description.adapter.js";
 import { NotificationDispatcher } from "./modules/notifications/notification-dispatcher.js";
 import { NotificationRepository } from "./modules/notifications/notification.repository.js";
 import { TelegramClient } from "./modules/notifications/telegram.client.js";
@@ -19,6 +20,7 @@ import { TelegramClient } from "./modules/notifications/telegram.client.js";
 type AppDependencies = {
   jobEnrichmentService?: JobEnrichmentService;
   requirementExtractionService?: JobRequirementExtractionService;
+  linkedinDescriptionAdapter?: LinkedInDescriptionAdapter;
 };
 
 export function createApp(
@@ -41,6 +43,10 @@ export function createApp(
     dependencies.requirementExtractionService ??
     new JobRequirementExtractionService(environment.ANTHROPIC_API_KEY);
 
+  const linkedinDescriptionAdapter =
+    dependencies.linkedinDescriptionAdapter ??
+    new LinkedInDescriptionAdapter();
+
   const processor = new Processor(
     processingRepository,
     jobRepository,
@@ -49,7 +55,8 @@ export function createApp(
     userProfileRepository,
     requirementExtractionService,
     (error: unknown) =>
-      app.log.error(error, "Error en el procesador interno")
+      app.log.error(error, "Error en el procesador interno"),
+    linkedinDescriptionAdapter
   );
 
   const notificationRepository = new NotificationRepository(database.db);
@@ -71,7 +78,7 @@ export function createApp(
 
   if (!telegramClient.isConfigured) {
     app.log.warn(
-      "Telegram no está configurado; el envío de notificaciones permanece desactivado"
+      "Telegram no está configurado; el envío  de notificaciones permanece desactivado"
     );
   }
 

@@ -18,6 +18,7 @@ import {
   processingRuns,
   requirementMatches
 } from "../../src/database/schema/index.js";
+import type { LinkedInDescriptionAdapter } from "../../src/modules/jobs/linkedin-description.adapter.js";
 
 const input = {
   source: "linkedin",
@@ -98,18 +99,27 @@ describe("procesador interno", () => {
     })
   } as unknown as JobRequirementExtractionService;
 
+  const linkedinDescriptionAdapter = {
+    getDescription: vi.fn().mockResolvedValue(null)
+  } as unknown as LinkedInDescriptionAdapter;
+
   const processor = new Processor(
     runs,
     jobs,
     jobEnrichmentService,
     50,
     userProfileRepository,
-    requirementExtractionService
+    requirementExtractionService,
+    undefined,
+    linkedinDescriptionAdapter
   );
 
   beforeEach(async () => {
     await clearDatabase(connection);
     vi.clearAllMocks();
+
+    vi.mocked(linkedinDescriptionAdapter.getDescription)
+      .mockResolvedValue(null);
 
     vi.mocked(jobEnrichmentService.enrich).mockResolvedValue({
       enrichment: {
@@ -143,6 +153,104 @@ describe("procesador interno", () => {
       expect.objectContaining({
         status: "COMPLETED",
         attempt: 1
+      })
+    );
+  });
+
+  it("recupera la descripción de LinkedIn cuando no está presente", async () => {
+    const recoveredDescription =
+      "Experiencia con TypeScript, Node.js y PostgreSQL.";
+
+    vi.mocked(linkedinDescriptionAdapter.getDescription)
+      .mockResolvedValueOnce(recoveredDescription);
+
+    await service.accept(input, "processor-linkedin-recovery-001");
+
+    await processor.processAvailable();
+
+    expect(linkedinDescriptionAdapter.getDescription)
+      .toHaveBeenCalledTimes(1);
+
+    expect(linkedinDescriptionAdapter.getDescription)
+      .toHaveBeenCalledWith(input.url);
+
+    expect(jobEnrichmentService.enrich).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: recoveredDescription
+      })
+    );
+
+    expect(requirementExtractionService.extract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: recoveredDescription
+      })
+    );
+  });
+
+  it("no recupera la descripción cuando LinkedIn ya la proporciona", async () => {
+    const originalDescription = "Descripción original de LinkedIn.";
+
+    await service.accept(
+      {
+        ...input,
+        description: originalDescription
+      },
+      "processor-linkedin-existing-description-001"
+    );
+
+    await processor.processAvailable();
+
+    expect(linkedinDescriptionAdapter.getDescription)
+      .not.toHaveBeenCalled();
+
+    expect(jobEnrichmentService.enrich).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: originalDescription
+      })
+    );
+
+    expect(requirementExtractionService.extract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: originalDescription
+      })
+    );
+  });
+
+  it("no intenta recuperar descripciones de otras fuentes", async () => {
+    await service.accept(
+      {
+        ...input,
+        source: "gmail"
+      },
+      "processor-non-linkedin-source-001"
+    );
+
+    await processor.processAvailable();
+
+    expect(linkedinDescriptionAdapter.getDescription)
+      .not.toHaveBeenCalled();
+  });
+
+  it("continúa el procesamiento si no puede recuperar la descripción", async () => {
+    vi.mocked(linkedinDescriptionAdapter.getDescription)
+      .mockResolvedValueOnce(null);
+
+    await service.accept(input, "processor-linkedin-recovery-null-001");
+
+    await processor.processAvailable();
+
+    expect(linkedinDescriptionAdapter.getDescription)
+      .toHaveBeenCalledTimes(1);
+
+    expect(jobEnrichmentService.enrich).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: null
+      })
+    );
+
+    expect(requirementExtractionService.extract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: null
       })
     );
   });

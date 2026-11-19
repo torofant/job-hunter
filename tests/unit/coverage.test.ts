@@ -79,7 +79,6 @@ describe("calculateCoverageBreakdown", () => {
       location: [{ level: "N/A", weight: 1 }],
       employment_conditions: [{ level: "FULL", weight: 1 }],
       languages: [{ level: "LIMITED", weight: 1 }],
-      other_requirements: [{ level: "FULL", weight: 1 }]
     };
 
     expect(calculateCoverageBreakdown(inputs)).toEqual({
@@ -89,7 +88,6 @@ describe("calculateCoverageBreakdown", () => {
       location: null,
       employment_conditions: 100,
       languages: 50,
-      other_requirements: 100
     });
   });
 });
@@ -156,7 +154,6 @@ describe("calculateGlobalCoverageScore", () => {
       location: null,
       employment_conditions: 100,
       languages: 50,
-      other_requirements: 100
     };
 
     const expected =
@@ -165,16 +162,14 @@ describe("calculateGlobalCoverageScore", () => {
         50 * 25 +
         0 * 20 +
         100 * 10 +
-        50 * 5 +
-        100 * 5
+        50 * 5
       ) /
       (
         COVERAGE_CATEGORY_WEIGHTS.job_type +
         COVERAGE_CATEGORY_WEIGHTS.technologies +
         COVERAGE_CATEGORY_WEIGHTS.experience +
         COVERAGE_CATEGORY_WEIGHTS.employment_conditions +
-        COVERAGE_CATEGORY_WEIGHTS.languages +
-        COVERAGE_CATEGORY_WEIGHTS.other_requirements
+        COVERAGE_CATEGORY_WEIGHTS.languages
       );
 
     expect(calculateGlobalCoverageScore(breakdown)).toBe(expected);
@@ -188,7 +183,6 @@ describe("calculateGlobalCoverageScore", () => {
       location: null,
       employment_conditions: null,
       languages: null,
-      other_requirements: null
     };
 
     expect(calculateGlobalCoverageScore(breakdown)).toBeNull();
