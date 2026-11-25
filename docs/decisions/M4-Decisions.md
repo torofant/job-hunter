@@ -467,15 +467,11 @@ Se verifica que, si no hay señales evaluables de ajuste profesional (familia o 
 
 # M4 STATUS
 
-**M4 — IMPLEMENTACIÓN EN CURSO; VALIDACIÓN PENDIENTE**
+**M4 — IMPLEMENTACIÓN Y VALIDACIÓN COMPLETADAS**
 
-La implementación se realizará en este orden:
+Scoring, Coverage, Confidence, persistencia y priorización están implementados.
+Las pruebas automatizadas actuales y el benchmark real registrado en M9
+validaron el análisis y el cálculo del score. Los ajustes posteriores de
+evaluación se registran en M7 y M9.
 
-1. M4.1 — Categorías admitidas de Requirement (OTHER excluido).
-2. M4.2 — Scoring.
-3. M4.3 — Coverage y Confidence.
-4. M4.4 — Persistencia y priorización.
-
-M4.5 y M4.6 establecen límites e invariantes transversales aplicables a todas las subfases.
-
-La implementación podrá comenzar a partir de este documento. Si aparece un problema real que obligue a cambiar una decisión cerrada o si M0.11 no determina un detalle imprescindible, deberá documentarse y resolverse explícitamente antes de modificar el comportamiento.
+M4.5 y M4.6 establecen límites e invariantes transversales aplicables a todas las subfases. Cualquier cambio de una decisión cerrada de M4 deberá documentarse antes de modificar el código o el comportamiento.

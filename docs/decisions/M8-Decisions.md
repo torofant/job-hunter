@@ -63,6 +63,8 @@ No se debe utilizar `docker compose down -v` si se quieren conservar los volúme
 
 ## Estado
 
-La configuración y las comprobaciones del entorno local de M8 están realizadas. El cambio de `README.md`, `docker-compose.yml` y este documento debe revisarse y confirmarse en un commit antes de considerar M8 cerrado.
+**M8 — COMPLETADO**
 
-M9, validación integral y estabilización, permanece como hito posterior.
+El entorno operativo local y las comprobaciones de este hito quedaron
+implementados y publicados en el commit `198e72f`. M9, el hito posterior,
+también está completado según `M9-Decisions.md`.

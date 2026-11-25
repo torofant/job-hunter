@@ -1194,10 +1194,11 @@ Concreta la estrategia de testing de M0.11 para las reglas específicas de Match
 
 # M3 STATUS
 
-**M3 — Matching: DISEÑO COMPLETO**
+**M3 — IMPLEMENTACIÓN COMPLETADA**
 
-Todas las decisiones de arquitectura y comportamiento necesarias para implementar M3 quedan cerradas.
-
-La implementación podrá comenzar a partir de este documento sin introducir decisiones funcionales adicionales salvo que aparezca durante la implementación un problema real que obligue a modificar una decisión cerrada.
+El modelo de perfil, Requirements y Matching definido en M3 está implementado.
+La implementación queda cubierta por las pruebas unitarias y de integración
+vigentes. Las decisiones de diseño de este documento siguen siendo la
+referencia para M3.
 
 Cualquier cambio de una decisión de M3 deberá documentarse explícitamente antes de modificar el código.

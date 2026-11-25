@@ -1,5 +1,7 @@
 # Job Hunter
 
+Estado y hoja de ruta del proyecto: [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+
 ## Desarrollo local
 
 Node.js se ejecuta directamente en Windows y PostgreSQL 18.6 se inicia con Docker Compose.

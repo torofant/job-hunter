@@ -85,6 +85,10 @@ El inglés B1 no alcanza el nivel B2 preferido de la oferta.
 
 ## Estado
 
-La revisión de código, las comprobaciones automatizadas y el benchmark real
-de M9 están validados. La incorporación de este documento y el commit de los
-cambios locales quedan pendientes para cerrar formalmente el hito.
+**M9 — COMPLETADO Y PUBLICADO**
+
+La implementación, las comprobaciones automatizadas y el benchmark real
+quedaron registrados y publicados en el commit `e0468b2`.
+
+No quedan tareas de implementación pendientes dentro del alcance M1–M9.
+El dashboard permanece aplazado a un hito futuro, según la hoja de ruta de M6.
