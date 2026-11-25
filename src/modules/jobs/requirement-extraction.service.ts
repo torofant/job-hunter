@@ -13,6 +13,7 @@ import {
   REQUIREMENT_EXTRACTION_SYSTEM_PROMPT
 } from "./prompts/requirement-extraction.prompt.js";
 import type { RequirementExtractionInput } from "./requirement-extraction-input.js";
+import { normalizeLanguageLevel } from "./requirement.normalizer.js";
 
 const CLAUDE_MODEL = "claude-haiku-4-5";
 
@@ -28,7 +29,7 @@ type ClaudeRequirement = ClaudeRequirementExtractionResult["requirements"][numbe
 
 function convertClaudeRequirement(
   requirement: ClaudeRequirement
-): Record<string, unknown> {
+): Record<string, unknown> | null {
   const { category, type, importance, items } = requirement;
 
   if (type === "single" && items.length !== 1) {
@@ -84,8 +85,10 @@ function convertClaudeRequirement(
       });
       break;
 
-    case "language":
-      mappedItems = items.map((item) => {
+    case "language": {
+      const languageItems: Record<string, unknown>[] = [];
+
+      for (const item of items) {
         if (
           item.targetType !== null ||
           item.minimumYears !== null ||
@@ -96,12 +99,23 @@ function convertClaudeRequirement(
           );
         }
 
-        return {
+        const minimumLevel = normalizeLanguageLevel(item.minimumLevel);
+
+        // Si no reconocemos la expresión, omitimos este requisito
+        // para no inventar un nivel CEFR.
+        if (minimumLevel === null) {
+          return null;
+        }
+
+        languageItems.push({
           language: item.value,
-          minimumLevel: item.minimumLevel
-        };
-      });
+          minimumLevel
+        });
+      }
+
+      mappedItems = languageItems;
       break;
+    }
   }
 
   let data: Record<string, unknown>;
@@ -125,8 +139,15 @@ function convertClaudeRequirement(
 function convertClaudeResult(
   result: ClaudeRequirementExtractionResult
 ): RequirementExtractionResult {
+  const requirements = result.requirements
+    .map(convertClaudeRequirement)
+    .filter(
+      (requirement): requirement is Record<string, unknown> =>
+        requirement !== null
+    );
+
   return requirementExtractionResultSchema.parse({
-    requirements: result.requirements.map(convertClaudeRequirement)
+    requirements
   });
 }
 
@@ -142,7 +163,7 @@ export class JobRequirementExtractionService {
   ): Promise<RequirementExtractionResultWithUsage> {
     const response = await this.client.messages.parse({
       model: CLAUDE_MODEL,
-      max_tokens: 1024,
+      max_tokens: 2048,
       system: REQUIREMENT_EXTRACTION_SYSTEM_PROMPT,
       messages: [
         {

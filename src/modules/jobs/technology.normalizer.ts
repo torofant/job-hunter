@@ -13,7 +13,10 @@ const TECHNOLOGY_ALIASES: Record<string, string> = {
   react: "react",
 
   "react native": "react-native",
-  "react-native": "react-native"
+  "react-native": "react-native",
+
+  "rest api": "rest",
+  "rest apis": "rest",
 };
 
 export function normalizeText(value: string): string {

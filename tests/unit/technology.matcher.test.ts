@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { 
-    matchTechnologyRequirement,
-    evaluateTechnologyRequirement
+import {
+  matchTechnologyRequirement,
+  evaluateTechnologyRequirement
 } from "../../src/modules/jobs/technology.matcher.js";
 import type { Requirement } from "../../src/modules/jobs/requirement.js";
 import type { UserProfile } from "../../src/modules/jobs/user-profile.js";
@@ -212,19 +212,40 @@ describe("matchTechnologyRequirement", () => {
   });
 
   it("evalúa una tecnología sin generar un requirementId", () => {
-  const requirement = createTechnologyRequirement("JavaScript");
+    const requirement = createTechnologyRequirement("JavaScript");
 
-  const result = evaluateTechnologyRequirement(
-    requirement,
-    userProfileBase
-  );
+    const result = evaluateTechnologyRequirement(
+      requirement,
+      userProfileBase
+    );
 
-  expect(result).toEqual({
-    result: "MATCH",
-    evidence: {
-      technology: "javascript",
-      source: "USER_PROFILE"
-    }
+    expect(result).toEqual({
+      result: "MATCH",
+      evidence: {
+        technology: "javascript",
+        source: "USER_PROFILE"
+      }
+    });
   });
-});
+
+  it("marca MATCH cuando REST APIs cubre un requisito REST", () => {
+    const profile: UserProfile = {
+      ...userProfileBase,
+      technologies: [
+        {
+          name: "REST APIs",
+          level: null,
+          context: null
+        }
+      ],
+      experiences: []
+    };
+
+    const result = matchTechnologyRequirement(
+      createTechnologyRequirement("rest"),
+      profile
+    );
+
+    expect(result.result).toBe("MATCH");
+  });
 });

@@ -792,7 +792,7 @@ describe("procesador interno", () => {
     expect(persistedAnalysis).toEqual(
       expect.objectContaining({
         requirementExtractionStatus: "COMPLETED",
-        score: expect.any(Number),
+        score: null,
         coverage: expect.any(Number),
         coverageBreakdown: expect.any(Object),
         confidenceLevel: "MEDIUM"

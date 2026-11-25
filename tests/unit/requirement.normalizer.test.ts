@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   haveSameRequirementSet,
   normalizeAndDeduplicateRequirements,
-  normalizeRequirement
+  normalizeRequirement,
+  normalizeLanguageLevel
 } from "../../src/modules/jobs/requirement.normalizer.js";
 
 
@@ -293,5 +294,21 @@ describe("requirement normalizer", () => {
     ]);
 
     expect(haveSameRequirementSet(first, [])).toBe(false);
+  });
+
+  it.each([
+    ["nativo o bilingüe", "C2"],
+    ["nivel alto", "B2"],
+    ["intermedio", "B1"],
+    ["conversación", "B1"],
+    ["básico", "A2"],
+    ["leer documentación", "A2"],
+    ["C1", "C1"]
+  ] as const)("normaliza el nivel '%s' a %s", (phrase, expected) => {
+    expect(normalizeLanguageLevel(phrase)).toBe(expected);
+  });
+
+  it("devuelve null si la expresión no está reconocida", () => {
+    expect(normalizeLanguageLevel("fluido")).toBeNull();
   });
 });

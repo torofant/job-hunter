@@ -1,5 +1,5 @@
 
-export const REQUIREMENT_EXTRACTION_PROMPT_VERSION = "1.1.0";
+export const REQUIREMENT_EXTRACTION_PROMPT_VERSION = "1.4.0";
 
 export const REQUIREMENT_EXTRACTION_SYSTEM_PROMPT = `
 Eres un extractor de requisitos de ofertas de empleo.
@@ -38,6 +38,10 @@ Ejemplos válidos:
 - Node.js
 - PostgreSQL
 - Docker
+
+Los asistentes de IA para programar y otras herramientas concretas de desarrollo cuentan como tecnologías. Si la oferta nombra varias como alternativas, extráelas como un requisito technology de tipo alternative y conserva su importancia.
+
+Ejemplo: “Claude, Codex o Copilot como asistentes de programación” → technology, alternative [claude, codex, copilot].
 
 No conviertas expresiones genéricas en tecnologías.
 
@@ -82,29 +86,30 @@ Si la oferta indica experiencia pero no proporciona un número fiable de años, 
 
 ## Idiomas
 
-Solo crea un requisito de idioma cuando exista un nivel CEFR fiable.
+Crea un requisito de idioma cuando la oferta indique el idioma y una de estas dos cosas:
+- un nivel CEFR explícito;
+- una expresión de nivel reconocida por las reglas de normalización de la aplicación.
 
-Niveles válidos:
-- A1
-- A2
-- B1
-- B2
-- C1
-- C2
+Si la oferta indica un nivel CEFR, conserva el código exacto: A1, A2, B1, B2, C1 o C2.
 
-Ejemplos:
-- "English B2" → language/english/B2
-- "French C1" → language/french/C1
+Si indica una expresión reconocida sin código CEFR, conserva en minimumLevel la expresión breve tal como aparece en la oferta. No la conviertas tú a CEFR: la aplicación hará esa conversión.
 
-No conviertas expresiones ambiguas en niveles CEFR.
+Expresiones reconocidas:
+- “nativo”, “nativa”, “bilingüe”, “native”, “bilingual”, “nativo o bilingüe”, “native or bilingual”;
+- “alto”, “nivel alto”, “high”, “high level”;
+- “intermedio”, “intermediate”, “conversación”, “conversacional”, “conversational”;
+- “básico”, “basic”, “leer documentación”, “reading documentation”.
 
 Ejemplos:
-- "good English"
-- "advanced English"
-- "fluent English"
-- "professional English"
+- “Español nativo o bilingüe” → language: spanish, minimumLevel: “nativo o bilingüe”.
+- “Nivel alto de inglés” → language: english, minimumLevel: “nivel alto”.
+- “Inglés intermedio/conversacional” → language: english, minimumLevel: “intermedio”.
+- “Inglés básico para leer documentación” → language: english, minimumLevel: “básico”.
+- “English B2” → language: english, minimumLevel: “B2”.
 
-Si no existe un nivel CEFR fiable, no crees el requisito.
+Copia solo la expresión de nivel breve, sin añadir el nombre del idioma ni palabras que no sean el nivel.
+
+No infieras un nivel a partir de expresiones no reconocidas. Si no hay un CEFR explícito ni una expresión reconocida, omite el requisito de idioma.
 
 ## Importance
 
@@ -202,12 +207,21 @@ Reglas por categoría:
 - value contiene el nombre normalizado del idioma.
 - targetType debe ser null.
 - minimumYears debe ser null.
-- minimumLevel debe ser uno de los niveles CEFR A1, A2, B1, B2, C1 o C2.
-- No emitas requisitos de idioma sin nivel CEFR fiable.
+- minimumLevel debe contener el código CEFR explícito encontrado en la oferta o la expresión breve del nivel tal como aparece escrita.
+- No conviertas expresiones del nivel a CEFR; la aplicación las normalizará.
+- Emite el requisito solo si contiene un nivel CEFR explícito o una expresión reconocida en la sección “Idiomas”.
 
 Para alternative, todos los elementos de items representan opciones entre las que basta cumplir una (OR).
 
 Para group, todos los elementos de items son componentes que deben cumplirse conjuntamente (AND).
+
+Si la oferta presenta requisitos separados para las mismas opciones, extrae ambos requisitos y conserva su importancia y composición.
+
+Ejemplo:
+- “Se requiere AWS o Google Cloud” → technology, required, alternative [aws, google cloud].
+- “Se valorará experiencia con ambas nubes, AWS y Google Cloud” → technology, preferred, group [aws, google cloud].
+
+No omitas la preferencia por ambas tecnologías ni la sustituyas por la alternativa obligatoria.
 
 Si no existen requisitos suficientemente evidenciados, devuelve:
 

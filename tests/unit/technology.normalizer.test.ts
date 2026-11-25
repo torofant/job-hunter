@@ -9,6 +9,8 @@ describe("normalizeTechnology", () => {
     expect(normalizeTechnology("node.js")).toBe("nodejs");
     expect(normalizeTechnology("React.js")).toBe("react");
     expect(normalizeTechnology("React Native")).toBe("react-native");
+    expect(normalizeTechnology("REST API")).toBe("rest");
+    expect(normalizeTechnology("REST APIs")).toBe("rest");
   });
 
   it("normalizes unknown technologies without inventing aliases", () => {

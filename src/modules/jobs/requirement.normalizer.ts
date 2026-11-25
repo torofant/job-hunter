@@ -26,6 +26,64 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   aleman: "german"
 };
 
+export type LanguageLevel =
+  | "A1"
+  | "A2"
+  | "B1"
+  | "B2"
+  | "C1"
+  | "C2";
+
+const LANGUAGE_LEVEL_ALIASES: Record<string, LanguageLevel> = {
+  nativo: "C2",
+  nativa: "C2",
+  bilingue: "C2",
+  native: "C2",
+  bilingual: "C2",
+  "nativo o bilingue": "C2",
+  "nativa o bilingue": "C2",
+  "native or bilingual": "C2",
+
+  alto: "B2",
+  "nivel alto": "B2",
+  high: "B2",
+  "high level": "B2",
+
+  intermedio: "B1",
+  "nivel intermedio": "B1",
+  conversacion: "B1",
+  conversacional: "B1",
+  intermediate: "B1",
+  conversational: "B1",
+
+  basico: "A2",
+  "nivel basico": "A2",
+  basic: "A2",
+  "leer documentacion": "A2",
+  "lectura de documentacion": "A2",
+  "basico leer documentacion": "A2",
+  "reading documentation": "A2",
+  "basic reading documentation": "A2"
+};
+
+export function normalizeLanguageLevel(
+  value: string
+): LanguageLevel | null {
+  const normalized = normalizeText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  const explicitLevel = normalized.match(/\b([abc][12])\b/)?.[1];
+
+  if (explicitLevel) {
+    return explicitLevel.toUpperCase() as LanguageLevel;
+  }
+
+  return LANGUAGE_LEVEL_ALIASES[normalized] ?? null;
+}
 
 function normalizeLanguage(value: string): string {
   const normalized = normalizeText(value);

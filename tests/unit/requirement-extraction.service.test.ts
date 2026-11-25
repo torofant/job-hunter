@@ -140,7 +140,7 @@ describe("JobRequirementExtractionService", () => {
       inputTokens: 180,
       outputTokens: 120,
       model: "claude-haiku-4-5",
-      promptVersion: "1.1.0"
+      promptVersion: "1.4.0"
     });
 
     expect(createMock).toHaveBeenCalledTimes(1);
@@ -390,5 +390,115 @@ describe("JobRequirementExtractionService", () => {
     await expect(service.extract(input)).rejects.toThrow(
       "Claude no devolvió un resultado válido de extracción de requisitos"
     );
+  });
+
+  it("normaliza expresiones de nivel y omite las no reconocidas", async () => {
+    const cases = [
+      { language: "spanish", minimumLevel: "nativo o bilingüe" },
+      { language: "english", minimumLevel: "nivel alto" },
+      { language: "english", minimumLevel: "intermedio" },
+      { language: "english", minimumLevel: "básico" },
+      { language: "english", minimumLevel: "C1" },
+      { language: "english", minimumLevel: "fluido" }
+    ];
+
+    createMock.mockResolvedValue({
+      parsed_output: {
+        requirements: cases.map(({ language, minimumLevel }) => ({
+          category: "language",
+          type: "single",
+          importance: "preferred",
+          items: [
+            {
+              value: language,
+              targetType: null,
+              minimumYears: null,
+              minimumLevel
+            }
+          ]
+        }))
+      },
+      usage,
+      model: "claude-haiku-4-5"
+    });
+
+    const service = new JobRequirementExtractionService("test-api-key");
+    const result = await service.extract(input);
+
+    const levels = result.result.requirements.map((requirement) => {
+      if (requirement.category !== "language" || requirement.type !== "single") {
+        throw new Error("Se esperaba un requisito simple de idioma");
+      }
+
+      return requirement.data.minimumLevel;
+    });
+
+    expect(levels).toEqual(["C2", "B2", "B1", "A2", "C1"]);
+  });
+
+  it("conserva el requisito de una nube y la preferencia por ambas", async () => {
+    const cloudOptions = [
+      {
+        value: "aws",
+        targetType: null,
+        minimumYears: null,
+        minimumLevel: null
+      },
+      {
+        value: "google cloud",
+        targetType: null,
+        minimumYears: null,
+        minimumLevel: null
+      }
+    ];
+
+    createMock.mockResolvedValue({
+      parsed_output: {
+        requirements: [
+          {
+            category: "technology",
+            type: "alternative",
+            importance: "required",
+            items: cloudOptions
+          },
+          {
+            category: "technology",
+            type: "group",
+            importance: "preferred",
+            items: cloudOptions
+          }
+        ]
+      },
+      usage,
+      model: "claude-haiku-4-5"
+    });
+
+    const service = new JobRequirementExtractionService("test-api-key");
+    const result = await service.extract(input);
+
+    expect(result.result.requirements).toEqual([
+      {
+        category: "technology",
+        type: "alternative",
+        importance: "required",
+        data: {
+          options: [
+            { technology: "aws" },
+            { technology: "google cloud" }
+          ]
+        }
+      },
+      {
+        category: "technology",
+        type: "group",
+        importance: "preferred",
+        data: {
+          components: [
+            { technology: "aws" },
+            { technology: "google cloud" }
+          ]
+        }
+      }
+    ]);
   });
 });
